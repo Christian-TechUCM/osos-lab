@@ -17,7 +17,10 @@ PATCH_ARM const void *cfw_bitmap_resource_get(void *service, uint32_t type, uint
                 return cfw_bitmap_assets[i].data;
         }
     }
-    return cfw_bitmap_resource_get_original(service, type, id);
+    const void *resource = cfw_bitmap_resource_get_original(service, type, id);
+    if (type == OSOS_RESOURCE_COLR)
+        resource = cfw_dark_mode_color(id, resource);
+    return resource;
 }
 
 static const struct cfw_bitmap_asset *find_asset(void *service, uint32_t id,

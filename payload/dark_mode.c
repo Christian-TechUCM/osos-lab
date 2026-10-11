@@ -68,6 +68,33 @@ int cfw_dark_mode_action(void *controller, const char *action, uint32_t argument
     return 1;
 }
 
+/*
+ * The Now Playing idle clock (shown while playing on battery) draws its digits and
+ * icons as light bitmaps, so it keeps its light background. COLR data is one
+ * 0x00RRGGBB word; the fill only darkens neutral grays, so a one-step tint is
+ * enough to leave this color alone.
+ */
+const void *cfw_dark_mode_color(uint32_t id, const void *color)
+{
+    static uint32_t idle_background;
+    static uint32_t light;
+    if (!enabled || !color)
+        return color;
+    if (!idle_background) {
+        struct osos_string name;
+        osos_string_init(&name, "NowPlaying_Idle_Background");
+        idle_background = *osos_resource_name_slot(&name);
+        osos_string_destroy(&name);
+    }
+    uint32_t rgb = *(const uint32_t *)color;
+    uint32_t blue = rgb & 0xff;
+    if (id != idle_background || ((rgb >> 16) & 0xff) != blue ||
+        ((rgb >> 8) & 0xff) != blue || blue < BACKGROUND_LIGHT_MIN)
+        return color;
+    light = rgb - 1;
+    return &light;
+}
+
 PATCH_ARM void cfw_dark_mode_fill(void *surface, const void *rect,
                                 const unsigned char *color, uint32_t mode,
                                 void *clip)
