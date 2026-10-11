@@ -40,6 +40,25 @@ def menu(rows):
 
 
 class UiTests(unittest.TestCase):
+    def test_sleep_timer_shortcut_preserves_existing_now_playing_events(self):
+        root = Path(__file__).resolve().parents[2]
+        metadata = json.loads((root / "firmware/ui.json").read_text())
+        bindings = json.loads((root / "payload/native/ui.json").read_text())["bindings"]
+        resources = Resources(metadata["resources"], bindings)
+        document = parser.read(root / "payload/sleep_timer.ui")
+        compiled = compile_document(resources, document)
+        label = compiled.string_ids["CFW_SLEEP_TIMER_LABEL"]
+        self.assertEqual(bytes(resources.added["Str ", label].data), b"Sleep Timer\0")
+        layouts = blocks(resources.stock("SLst", "NowPlaying_Screen"))
+        self.assertTrue(layouts)
+        for _, layout in layouts:
+            key = "SEVT", word(layout, 0)
+            original = resources.stock(*key)
+            updated = resources.added[key]
+            # Event count is the first word; every original event is retained.
+            self.assertEqual(updated[4 : len(original)].data, original[4:].data)
+            self.assertIn(b"contextualMenu.CFW_SleepTimer", updated.data)
+
     def test_settings_toggle_preserves_stock_rows_and_has_no_navigation(self):
         root = Path(__file__).resolve().parents[2]
         metadata = json.loads((root / "firmware/ui.json").read_text())

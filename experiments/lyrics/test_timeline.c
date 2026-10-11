@@ -15,6 +15,12 @@ int main(void)
     assert(lyrics_open(&timeline, valid, sizeof(valid)));
     assert(lyrics_current(&timeline, 999) == -1);
     assert(lyrics_current(&timeline, 1000) == 0);
+    assert(lyrics_current_adjusted(&timeline, 1000, 100) == -1);
+    assert(lyrics_current_adjusted(&timeline, 1100, 100) == 0);
+    assert(lyrics_current_adjusted(&timeline, 900, -100) == 0);
+    assert(lyrics_current_adjusted(&timeline, 0, 5000) == -1);
+    assert(lyrics_current_adjusted(&timeline, UINT32_MAX, INT32_MIN) == 0);
+    assert(lyrics_current_adjusted(&timeline, 6000, INT32_MAX) == 0);
     assert(lyrics_line_at(&timeline, 0, &line) && line.length == 3);
     assert(!memcmp(line.text, "One", 3));
     uint8_t unaligned[sizeof(valid) + 1];

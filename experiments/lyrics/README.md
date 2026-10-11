@@ -3,8 +3,9 @@
 This is a **Mac/browser proof of concept**, plus a portable C timeline core.
 It does not add a Lyrics screen to the installed firmware yet. The C core is
 outside `payload/`, so the firmware bundle contains the existing Reprise
-features, the imported idle-clock fixes, and the GitHub Dark palette below, but
-no native Lyrics screen. No new firmware addresses are guessed.
+features, the imported idle-clock fixes, the GitHub Dark palette below, and a
+stock Sleep Timer shortcut, but no native Lyrics screen. No new firmware
+addresses are guessed.
 
 ## What works
 
@@ -22,6 +23,17 @@ no native Lyrics screen. No new firmware addresses are guessed.
 - Optionally extract embedded cover art and prepare a dark, multicolor blurred
   background for the preview and a future native renderer. Bad/missing artwork
   falls back to the plain theme without disabling lyrics.
+- Adjust the displayed timing by ±5 seconds in 100 ms steps, without changing
+  playback or tags. Positive values display lyrics later; negative values
+  display them earlier. Loading a new track resets the adjustment to zero.
+- Choose Normal / Large / Extra large lyric text (20 / 24 / 28 px in the preview).
+  Layout recalculates immediately, and tall cues can be scrolled in the lyric
+  viewport. Static lyrics use 15 / 18 / 21 px. Size resets on page reload.
+- Preview a one-shot sleep timer (15 / 30 / 60 / 90 / 120 minutes, or Off).
+  It counts elapsed monotonic time, not track position: pause, seeking, and
+  changing tracks do not extend it. Expiration pauses playback, not the Mac.
+  Reloading the page cancels it. Browser/OS suspension can delay callbacks;
+  this preview is not a hardware-timer validation.
 
 The first version has **line-level timing**. Word-by-word highlighting needs
 word timings. Enhanced LRC word markers are reduced to their enclosing line;
@@ -118,6 +130,57 @@ Always validate before rendering, and honor `length` when copying text.
 
 The prototype export filename identifies the local source path. **It is not an
 iTunesDB identifier and must not be used to bind a track on the iPod.**
+
+`lyrics_current_adjusted` supplies the same ±5000 ms display-only adjustment in
+the portable C reader. It uses bounded signed arithmetic so a positive delay
+can correctly produce a before-first-line result, including cues at zero;
+negative delays cannot wrap the unsigned playback clock. It is not connected
+to the iPod player yet. Native font selection and per-track preferences also
+remain part of the pending renderer integration.
+
+## Native sleep-timer shortcut
+
+The Now Playing context menu now includes Sleep Timer. It resolves the stock
+Alarms sleep screen by name and uses the existing Song Info controller-factory
+and foreground-push ABI. Apple's existing controller owns timer selection,
+expiration, and return navigation. No new firmware address, timer-state offset,
+or audio callback is introduced. Missing resources, registry, or screen creation
+stop the action without pushing a null controller.
+
+This is a narrow adaptation of kayboll's [upstream PR #15](https://github.com/lgreitis/osos-lab/pull/15),
+commit `0efdcab988d07102c5006ea40e9a5780d8c560ea`. The broader PR's Night Shift and
+audiobook shuffle-selector replacement are not imported. Host mocks verify
+action/support-query dispatch and failure paths; UI tests verify the existing
+Now Playing events are preserved. Actual navigation and timer expiration still
+require image assembly and a separately planned hardware test.
+
+## No-device firmware-input search (2026-10-11)
+
+- The [official distribution](https://github.com/lgreitis/osos-lab#distribution)
+  intentionally packages patches/recipes, not Apple's plaintext firmware.
+- The [installer preparation code](https://github.com/lgreitis/repriseos-installer/blob/main/src-tauri/src/install/firmware.rs)
+  can reuse `firmware/osos-2.0.5.bin` and `firmware/aupd-2.0.5.bin` from an existing
+  cache after verifying them. No existing installer cache was found on this Mac.
+- The [installer's local-package path](https://github.com/lgreitis/repriseos-installer/blob/0549870e161fd2bc5fa5fdec3ffd9e20a846d4bb/src-tauri/src/package.rs)
+  accepts a selected RepriseOS ZIP and validates its contents and compatibility.
+  This provides a route for a future custom build without changing the official
+  release feed. It does not supply Apple plaintext, validate our future native
+  Lyrics implementation, or remove the FAT32 requirement. We have not launched
+  the installer or selected an installation target.
+- The [QEMU project](https://github.com/davidmonterocrespo24/qemu-ipod-classic)
+  explicitly supplies no firmware and requires a device dump. Its emulator is
+  not a way to obtain the missing decryption key or firmware.
+- The [firmware-research project](https://github.com/giek2000/ipod-classic-firmware-research)
+  contains analysis and a hardware-assisted decryption guide, not the required
+  binaries. A public 2.0.4 image is a different version and cannot substitute
+  for the pinned 2.0.5 inputs.
+
+No verified public download of the required 2.0.5 plaintext was located. A
+legitimately obtained preserved generic OSOS/AUPD pair can be checked with the
+existing `tools/import_inputs.py` workflow and `firmware/apple.json` hashes.
+Another device's personalized companion or NOR image must never be used as this
+device's installation identity. No device was queried, rebooted, or written to
+as part of this search.
 
 ## Firmware integration gates
 

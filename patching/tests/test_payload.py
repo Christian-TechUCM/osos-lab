@@ -21,7 +21,11 @@ class PayloadTests(unittest.TestCase):
             directory = Path(temporary)
             generate(
                 Resources(metadata["resources"], bindings),
-                [root / "payload/dark_mode.ui", root / "payload/custom_eq.ui"],
+                [
+                    root / "payload/dark_mode.ui",
+                    root / "payload/custom_eq.ui",
+                    root / "payload/sleep_timer.ui",
+                ],
                 directory,
                 "test",
             )
@@ -33,6 +37,7 @@ class PayloadTests(unittest.TestCase):
                 "bitmap_assets",
                 "dark_mode",
                 "idle_clock",
+                "sleep_timer",
             ):
                 with self.subTest(fixture=name):
                     executable = directory / name

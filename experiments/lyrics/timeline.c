@@ -101,3 +101,16 @@ int lyrics_current(const struct lyrics_timeline *timeline, uint32_t position_ms)
     }
     return (int)low - 1;
 }
+
+int lyrics_current_adjusted(const struct lyrics_timeline *timeline,
+                            uint32_t position_ms, int32_t delay_ms)
+{
+    if (delay_ms > 5000)
+        delay_ms = 5000;
+    if (delay_ms < -5000)
+        delay_ms = -5000;
+    int64_t adjusted = (int64_t)position_ms - delay_ms;
+    if (adjusted < 0)
+        return -1;
+    return lyrics_current(timeline, adjusted > UINT32_MAX ? UINT32_MAX : (uint32_t)adjusted);
+}

@@ -46,6 +46,14 @@ RepriseOS package and builds a companion using that iPod's identity.
 - Song Info from song and Now Playing context menus.
 - Album Artists browsing with Artist fallback and configurable menu visibility.
 - Dark Mode (work in progress), with an On/Off toggle below Brightness in Settings.
+- Sleep Timer shortcut from the Now Playing context menu (hold Center), opening
+  Apple's existing sleep-timer screen. This fork's shortcut is host-tested but
+  not independently verified on hardware.
+
+This fork also has a [Mac-only lyrics lab](experiments/lyrics/README.md): live
+line highlighting, album-color backgrounds, timing adjustment, larger text,
+and a timer preview. **There is no native Lyrics screen yet.** Do not install
+the development bundle expecting these lyrics features to be present.
 
 **Album Artists** groups tracks by their Album Artist tag, using Artist when that
 field is empty. Show or hide the entry through Settings → Main Menu and Settings →

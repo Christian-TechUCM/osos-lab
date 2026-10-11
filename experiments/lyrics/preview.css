@@ -44,6 +44,19 @@ button, .file-label { font: inherit; cursor: pointer; }
 #seek { width: 100%; accent-color: #58a6ff; cursor: pointer; margin: 12px 0; }
 .transport-row { display: flex; justify-content: space-between; align-items: center; color: #9da7b3; font-size: 10px; letter-spacing: .6px; margin-bottom: 8px; }
 .transport-row label { display: flex; align-items: center; gap: 5px; }
+.lyrics-options { margin: 22px 0 0; padding: 14px; border: 1px solid #30363d; border-radius: 8px; }
+.lyrics-options legend { color: #c9d1d9; font-size: 12px; padding: 0 6px; }
+.lyrics-options > label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin: 10px 0 8px; }
+.lyrics-options select { width: 100%; padding: 7px; color: #e6edf3; background: #090c10; border: 1px solid #30363d; border-radius: 5px; }
+#lyric-delay { width: 100%; accent-color: #58a6ff; }
+.option-hint { display: flex; justify-content: space-between; align-items: center; color: #9da7b3; font-size: 11px; }
+.option-hint button { padding: 5px 8px; border: 1px solid #30363d; border-radius: 5px; color: #c9d1d9; background: #090c10; font-size: 11px; }
+#delay-value { color: #58a6ff; }
+#sleep-status { color: #9da7b3; font-size: 12px; margin-bottom: 0; }
+.screen.text-large .line { font-size: 24px; }
+.screen.text-extra .line { font-size: 28px; }
+.screen.text-large .viewport.static .line { font-size: 18px; }
+.screen.text-extra .viewport.static .line { font-size: 21px; }
 .screen.light { background: #f2f4ed; color: #1d2b24; }
 .screen.light.album-background:not(.ambient-off) { background-image: linear-gradient(#ffffffdc, #ffffffdc), url('/background.png'); }
 .screen.light header { background: #d8ded4; border-color: #66776055; }

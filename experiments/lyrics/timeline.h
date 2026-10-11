@@ -19,4 +19,8 @@ int lyrics_line_at(const struct lyrics_timeline *timeline, uint32_t index,
                    struct lyrics_line *line);
 /* -1 before the first cue or for an empty view. Seek-safe O(log n) lookup. */
 int lyrics_current(const struct lyrics_timeline *timeline, uint32_t position_ms);
+/* Positive delay shows lyrics later. Clamp to +/-5000 ms, without wraparound.
+ * Runtime display adjustment only: never changes the sidecar or audio clock. */
+int lyrics_current_adjusted(const struct lyrics_timeline *timeline,
+                            uint32_t position_ms, int32_t delay_ms);
 #endif

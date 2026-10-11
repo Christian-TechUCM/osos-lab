@@ -123,6 +123,12 @@ class NativeTests(unittest.TestCase):
         cls.lib.lyrics_open.restype = ctypes.c_int
         cls.lib.lyrics_current.argtypes = [ctypes.POINTER(Timeline), ctypes.c_uint32]
         cls.lib.lyrics_current.restype = ctypes.c_int
+        cls.lib.lyrics_current_adjusted.argtypes = [
+            ctypes.POINTER(Timeline),
+            ctypes.c_uint32,
+            ctypes.c_int32,
+        ]
+        cls.lib.lyrics_current_adjusted.restype = ctypes.c_int
         cls.lib.lyrics_line_at.argtypes = [
             ctypes.POINTER(Timeline),
             ctypes.c_uint32,
@@ -201,6 +207,25 @@ class NativeTests(unittest.TestCase):
             self.assertEqual(
                 self.lib.lyrics_current(ctypes.byref(self.timeline), time), expected
             )
+
+    def test_timing_adjustment_is_bounded_and_does_not_change_source(self):
+        source = lyrics.parse_lrc("[00:00]Zero\n[00:01]One\n[00:02]Two")
+        blob = lyrics.pack(source)
+        self.assertTrue(self.open(blob))
+        times = [0, 1000, 2000]
+        for position in (0, 1, 900, 1000, 1100, 1999, 2000, 6000, 0xFFFFFFFF):
+            for delay in (-2147483648, -5000, -100, 0, 100, 5000, 2147483647):
+                adjusted = position - max(-5000, min(5000, delay))
+                expected = max(
+                    (i for i, t in enumerate(times) if t <= adjusted), default=-1
+                )
+                self.assertEqual(
+                    self.lib.lyrics_current_adjusted(
+                        ctypes.byref(self.timeline), position, delay
+                    ),
+                    expected,
+                )
+        self.assertEqual(self.buffer.raw[: len(blob)], blob)
 
     def test_sanitized_malformed_input_harness(self):
         executable = Path(self.temp.name) / "sanitized"

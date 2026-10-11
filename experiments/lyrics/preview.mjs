@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import {currentCue, validateTrack} from './engine.mjs';
+import {currentCueAdjusted, validateTrack, SleepTimer} from './engine.mjs';
 const $ = id => document.getElementById(id);
 const audio = $('audio');
 const demo = {
@@ -17,6 +17,8 @@ const demo = {
 };
 let track, nodes = [], active = -2, playing = false, position = 0, lastTick = 0;
 let audioUrl = null, usingAudio = false, audioName = '', audioDuration = 0;
+let lyricDelay = 0, sleepTimeout = null;
+const sleepTimer = new SleepTimer();
 const time = ms => `${Math.floor(Math.max(0, ms) / 60000)}:${String(Math.floor(Math.max(0, ms) / 1000) % 60).padStart(2, '0')}`;
 
 function pause() { playing = false; audio.pause(); refresh(); }
@@ -32,10 +34,36 @@ function refreshBackground() {
   $('background-status').textContent = screen.classList.contains('album-background') && $('ambient').checked ?
     'BLURRED ALBUM ART · STATIC' : ($('light').checked ? 'LIGHT BACKGROUND' : 'GITHUB DARK');
 }
+function refreshDelay() {
+  $('lyric-delay').value = lyricDelay;
+  $('delay-value').textContent = lyricDelay ? `${(Math.abs(lyricDelay) / 1000).toFixed(1)} s ${lyricDelay > 0 ? 'later' : 'earlier'}` : 'Original timing';
+  refresh();
+}
+function checkSleep(now = performance.now()) {
+  if (sleepTimer.consume(now)) {
+    clearTimeout(sleepTimeout); sleepTimeout = null;
+    pause(); $('sleep-timer').value = '0';
+    $('sleep-status').textContent = 'Timer finished · playback paused';
+  } else {
+    const left = sleepTimer.remaining(now);
+    if (left !== null) $('sleep-status').textContent = `Pauses playback in ${time(Math.ceil(left / 1000) * 1000)}`;
+  }
+}
+function scheduleSleep() {
+  clearTimeout(sleepTimeout); sleepTimeout = null;
+  const left = sleepTimer.remaining(performance.now());
+  if (left !== null) sleepTimeout = setTimeout(() => {
+    checkSleep(); scheduleSleep();
+  }, Math.max(1, Math.ceil(left)));
+}
 function load(data) {
   const validated = validateTrack(data);
   pause(); clearAudio();
   track = validated; position = 0; active = -2;
+  lyricDelay = 0;
+  $('lyric-delay').value = 0;
+  $('delay-value').textContent = 'Original timing';
+  $('lyric-delay').disabled = $('reset-delay').disabled = track.mode !== 'synced';
   document.querySelector('.screen').classList.remove('album-background');
   refreshBackground();
   $('title').textContent = track.track.title;
@@ -53,7 +81,7 @@ function load(data) {
   $('viewport').classList.toggle('static', track.mode !== 'synced');
   refresh();
 }
-function refresh() {
+function refresh(forceLayout = false) {
   if (!track) return;
   const duration = usingAudio && audioDuration ? audioDuration : track.track.duration_ms;
   $('seek').max = duration;
@@ -64,11 +92,11 @@ function refresh() {
   $('play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   $('play-indicator').textContent = playing ? '▶' : 'Ⅱ';
   $('source').textContent = usingAudio ? 'AUDIO PLAYBACK CLOCK' : 'DEMO CLOCK';
-  const index = currentCue(track.cues, position);
+  const index = currentCueAdjusted(track.cues, position, lyricDelay);
   $('line-count').textContent = track.mode === 'synced' ?
     (index < 0 ? 'Waiting for first line' : `${index + 1} / ${track.cues.length}`) :
     (track.mode === 'static' ? 'Untimed lyrics' : 'No lyrics');
-  if (track.mode === 'synced' && index !== active) {
+  if (track.mode === 'synced' && (index !== active || forceLayout)) {
     if (nodes[active]) nodes[active].classList.remove('active');
     active = index;
     const node = nodes[Math.max(0, index)];
@@ -122,6 +150,24 @@ $('light').addEventListener('change', event => {
   refreshBackground();
 });
 $('ambient').addEventListener('change', refreshBackground);
+$('text-size').addEventListener('change', event => {
+  const screen = document.querySelector('.screen');
+  screen.classList.toggle('text-large', event.target.value === 'large');
+  screen.classList.toggle('text-extra', event.target.value === 'extra');
+  refresh(true);
+});
+$('lyric-delay').addEventListener('input', event => {
+  lyricDelay = Number(event.target.value); refreshDelay();
+});
+$('reset-delay').addEventListener('click', () => { lyricDelay = 0; refreshDelay(); });
+$('sleep-timer').addEventListener('change', event => {
+  clearTimeout(sleepTimeout); sleepTimeout = null;
+  const minutes = Number(event.target.value);
+  sleepTimer.arm(minutes, performance.now());
+  $('sleep-status').textContent = 'Sleep timer off';
+  scheduleSleep();
+  checkSleep();
+});
 $('demo').addEventListener('click', () => { load(demo); $('status').textContent = 'Demo timing · no audio loaded.'; });
 $('lyrics-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
@@ -141,6 +187,7 @@ document.addEventListener('keydown', event => {
   if (event.code === 'Space' && event.target === document.body) { event.preventDefault(); toggle(); }
 });
 function tick(now) {
+  checkSleep(now);
   if (usingAudio) position = (audio.currentTime || 0) * 1000;
   else if (playing) {
     position = Math.min(track.track.duration_ms, position + now - lastTick);

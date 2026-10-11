@@ -5,6 +5,7 @@
 #include "play_next.h"
 #include "song_info.h"
 #include "song_info_ui.h"
+#include "sleep_timer.h"
 
 int cfw_song_action_original(void *, const char *, uint32_t);
 int cfw_playlist_action_original(void *, const char *, uint32_t);
@@ -105,6 +106,7 @@ PATCH_ARM void cfw_now_playing_menu_cancel(struct osos_context_menu *menu,
                                            uint32_t flags)
 {
     osos_context_menu_append(menu, CFW_SONG_INFO_LABEL, "CFW_SongInfo", 1);
+    cfw_sleep_timer_menu(menu);
     osos_context_menu_append(menu, label, action, flags);
 }
 
@@ -113,6 +115,8 @@ PATCH_ARM int cfw_now_playing_action(void *controller, const char *action,
 {
     typedef int (*fn)(void *, const char *, uint32_t);
     if (song_action(controller, NOW_PLAYING, action, argument))
+        return 1;
+    if (cfw_sleep_timer_action(controller, action, argument))
         return 1;
     return ((fn)OSOS_NOW_PLAYING_ACTION)(controller, action, argument);
 }
