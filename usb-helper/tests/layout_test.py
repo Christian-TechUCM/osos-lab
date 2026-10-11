@@ -18,8 +18,8 @@ class LayoutTests(unittest.TestCase):
         root = Path(cls.tmp.name)
         main = (HERE / "main.c").read_text()
         reader = main[
-            main.index("static int read_layout_sector") : main.index(
-                "static void save_diagnostics"
+            main.index("static struct layout_attempt *new_attempt") : main.index(
+                "static void save_ata_diagnostics"
             )
         ]
         (root / "layout.c").write_text(
@@ -27,7 +27,8 @@ class LayoutTests(unittest.TestCase):
 #include "layout.h"
 #include <string.h>
 static struct disk_layout layout;
-static uint8_t readback[512];
+struct storage_probe upload_probe;
+struct layout_attempt upload_attempts[LAYOUT_ATTEMPTS];
 static struct { uint32_t sector_size, sectors_low, sectors_high; } record;
 #define RECORD (&record)
 #define IF_MD(a, b)
@@ -44,12 +45,16 @@ static int ata_read_sectors(uint32_t lba, unsigned count, void *out) {
         return 0;
     }
     ++partition_reads;
-    if (read_error)
+    if (read_error && read_error != -901 && read_error != -902)
         return read_error;
+    if (read_error == -901 && !(partition_reads & 1))
+        return -9;
     if (lba == boot_lba)
         memcpy(out, disk_bpb, 512);
     else
         memset(out, 0, 512);
+    if (read_error == -902 && !(partition_reads & 1))
+        ((uint8_t *)out)[100] ^= 1;
     return 0;
 }
 """
@@ -70,6 +75,8 @@ int read_validate(const uint8_t *mbr, const uint8_t *bpb, uint64_t capacity,
                           &accepted_bytes);
 }
 unsigned reads(void) { return partition_reads; }
+unsigned attempts(void) { return upload_probe.count; }
+void attempt(unsigned i, void *out) { memcpy(out, &upload_attempts[i], sizeof(upload_attempts[i])); }
 int partition_read_rc(unsigned slot) { return layout.rc[slot+1]; }
 uint64_t selected_start(void) { return accepted_start; }
 uint64_t selected_end(void) { return accepted_end; }
@@ -146,6 +153,62 @@ unsigned rejected_partition(void) { return layout.failed_partition; }
         return bool(
             self.lib.read_validate(bytes(mbr), bytes(bpb), capacity, slot, error, scale)
         )
+
+    def attempt(self, index):
+        out = ctypes.create_string_buffer(1056)
+        self.lib.attempt(index, out)
+        return struct.unpack_from("<IIIiiIII", out), out.raw[32:544], out.raw[544:]
+
+    def test_preserves_each_candidate_and_both_reads(self):
+        mbr, bpb = self.image()
+        self.assertTrue(self.discover(mbr, bpb, scale=8))
+        self.assertEqual(self.lib.attempts(), 5)
+        fields, first, repeat = self.attempt(0)
+        self.assertEqual(fields[:7], (0, 1, 0, 0, 0, 1, 0))
+        self.assertEqual(first, mbr)
+        self.assertEqual(repeat, mbr)
+        for index, mult in enumerate([1, 2, 4, 8], 1):
+            fields, first, repeat = self.attempt(index)
+            self.assertEqual(fields[:6], (1, mult, 2048 * mult, 0, 0, 1))
+            self.assertEqual(fields[6], 0 if mult == 8 else 4)
+            self.assertEqual(first, bpb if mult == 8 else bytes(512))
+            self.assertEqual(first, repeat)
+
+    def test_records_read_errors_and_mismatches_without_accepting_them(self):
+        for fault, expected in [
+            (-9, (-9, -200, 0, 1)),
+            (-901, (0, -9, 0, 2)),
+            (-902, (0, 0, 0, 3)),
+        ]:
+            self.assertFalse(self.discover(*self.image(), error=fault, scale=1))
+            fields, first, repeat = self.attempt(1)
+            self.assertEqual(fields[3:7], expected)
+            if fault == -902:
+                self.assertNotEqual(first, repeat)
+            elif fault == -901:
+                self.assertEqual(repeat, bytes(512))
+
+    def test_records_skipped_bounds_without_reading(self):
+        mbr, bpb = self.image()
+        self.assertFalse(self.discover(mbr, bpb, capacity=3000000, scale=8))
+        self.assertEqual(self.lib.attempts(), 5)
+        self.assertEqual(self.lib.reads(), 2)
+        for index in [2, 3, 4]:
+            fields, first, repeat = self.attempt(index)
+            self.assertEqual(fields[3:7], (-200, -200, 0, 6))
+            self.assertEqual(first + repeat, bytes(1024))
+
+    def test_all_four_partition_candidates_fit_capture_buffer(self):
+        mbr, bpb = self.image()
+        for slot in range(4):
+            mbr[450 + slot * 16] = 0x0C
+            struct.pack_into("<II", mbr, 454 + slot * 16, 2048 * (slot + 1), 2000000)
+        self.assertFalse(self.discover(mbr, bpb, slot=3, scale=8))
+        self.assertEqual(self.lib.attempts(), 20)
+        bpb[510:] = bytes(2)
+        self.assertFalse(self.discover(mbr, bpb, scale=8))
+        self.assertEqual(self.lib.attempts(), 17)
+        self.assertEqual(self.attempt(16)[0][:3], (4, 8, 65536))
 
     def test_multiple_sector_sizes_and_partition_slots(self):
         for size in [512, 1024, 2048, 4096]:

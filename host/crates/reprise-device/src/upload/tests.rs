@@ -226,9 +226,15 @@ fn result_requires_nonce_counts_path_both_hashes_and_clean_disk_operations() {
 struct InspectionFake {
     raw: Vec<u8>,
     commands: Vec<u8>,
+    save_sectors: Option<bool>,
 }
 
 impl BulkTransport for InspectionFake {
+    fn diagnostics(&mut self, directory: Option<&std::path::Path>, log: &mut dyn FnMut(String)) {
+        assert!(self.commands.is_empty());
+        self.save_sectors = Some(directory.is_some());
+        log("Storage diagnostics unavailable: simulated failure".into());
+    }
     fn endpoint(&self) -> u8 {
         2
     }
@@ -255,12 +261,24 @@ fn layout_failure_is_preserved_and_old_zero_size_status_is_cancelled() {
         let mut bulk = InspectionFake {
             raw,
             commands: vec![],
+            save_sectors: None,
         };
         let mut logs = vec![];
-        let error = inspect_bulk(&mut bulk, &[7; 16], 512, &mut |s| logs.push(s))
-            .unwrap_err()
-            .to_string();
+        let error = inspect_bulk(
+            &mut bulk,
+            &[7; 16],
+            512,
+            Some(std::path::Path::new("diagnostics")),
+            &mut |s| logs.push(s),
+        )
+        .unwrap_err()
+        .to_string();
+        assert_eq!(bulk.save_sectors, Some(true));
         assert!(error.contains("code -301"), "{error}");
+        assert_eq!(
+            logs[0],
+            "Storage diagnostics unavailable: simulated failure"
+        );
         if reported_size == 0 {
             assert!(error.contains("size: expected 512, received 0"));
             assert_eq!(bulk.commands, [CANCEL]);
@@ -269,6 +287,36 @@ fn layout_failure_is_preserved_and_old_zero_size_status_is_cancelled() {
             assert_eq!(bulk.commands, [ACKNOWLEDGE]);
             assert!(logs.iter().any(|s| s.contains("rc=-301")));
         }
+    }
+}
+
+#[test]
+fn storage_inspection_keeps_logs_but_saves_sectors_only_on_failure() {
+    for state in [COMPLETE, READY] {
+        let mut bulk = InspectionFake {
+            raw: status(512, state, &[0; 32]).raw,
+            commands: vec![],
+            save_sectors: None,
+        };
+        let mut logs = vec![];
+        let result = inspect_bulk(
+            &mut bulk,
+            &[7; 16],
+            512,
+            Some(std::path::Path::new("diagnostics")),
+            &mut |s| logs.push(s),
+        );
+        assert_eq!(result.is_ok(), state == COMPLETE);
+        assert_eq!(bulk.save_sectors, Some(state != COMPLETE));
+        assert!(logs.iter().any(|s| s.contains("Storage diagnostics")));
+        assert_eq!(
+            bulk.commands,
+            [if state == COMPLETE {
+                ACKNOWLEDGE
+            } else {
+                CANCEL
+            }]
+        );
     }
 }
 

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::{
-    diagnostics::{log_storage, DIAGNOSTICS, DIAGNOSTICS_SIZE},
+    diagnostics::{
+        log_attempt, log_probe, log_storage, ATTEMPT, ATTEMPT_SIZE, DIAGNOSTICS, DIAGNOSTICS_SIZE,
+        PROBE, PROBE_SIZE,
+    },
     image::UsbIdentity,
     protocol::{Status, RESULT_SIZE, STATUS},
 };
@@ -18,11 +21,11 @@ pub(super) trait BulkTransport {
     fn status(&mut self, nonce: &[u8; 16], size: u32) -> Result<Status>;
     fn command(&mut self, request: u8, nonce: &[u8; 16]) -> Result<()>;
     fn send(&mut self, data: &[u8]) -> Result<usize>;
-    fn diagnostics(&mut self, _log: &mut dyn FnMut(String)) {}
+    fn diagnostics(&mut self, _directory: Option<&std::path::Path>, _log: &mut dyn FnMut(String)) {}
 }
 
 impl BulkTransport for Bulk {
-    fn diagnostics(&mut self, log: &mut dyn FnMut(String)) {
+    fn diagnostics(&mut self, directory: Option<&std::path::Path>, log: &mut dyn FnMut(String)) {
         let mut raw = [0; DIAGNOSTICS_SIZE];
         let result = self
             .handle
@@ -31,6 +34,28 @@ impl BulkTransport for Bulk {
             .and_then(|n| log_storage(&raw[..n], log));
         if let Err(error) = result {
             log(format!("Storage diagnostics unavailable: {error}"));
+        }
+        let result = (|| {
+            let mut header = [0; PROBE_SIZE];
+            let n = self
+                .handle
+                .read_control(0xa1, PROBE, 0, 0, &mut header, TIMEOUT)
+                .map_err(|e| usb_error("storage probe", e))?;
+            let count = log_probe(&header[..n], log)?;
+            for index in 0..count {
+                let mut raw = [0; ATTEMPT_SIZE];
+                let n = self
+                    .handle
+                    .read_control(0xa1, ATTEMPT, index, 0, &mut raw, TIMEOUT)
+                    .map_err(|e| usb_error("storage read attempt", e))?;
+                if let Err(error) = log_attempt(&raw[..n], index, directory, log) {
+                    log(format!("Storage attempt {index}: {error}"));
+                }
+            }
+            Ok::<_, crate::Error>(())
+        })();
+        if let Err(error) = result {
+            log(format!("Extended storage diagnostics unavailable: {error}"));
         }
     }
     fn endpoint(&self) -> u8 {

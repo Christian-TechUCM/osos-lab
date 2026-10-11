@@ -27,15 +27,36 @@ static const volatile uint8_t nonce[16] = "REPRISE-NONCE-01";
 
 static struct disk_layout layout;
 struct storage_diagnostics upload_diagnostics;
-static uint8_t readback[512] __attribute__((aligned(32)));
+struct storage_probe upload_probe;
+struct layout_attempt upload_attempts[LAYOUT_ATTEMPTS];
 
-static int read_layout_sector(unsigned slot, uint32_t lba)
+static struct layout_attempt *new_attempt(unsigned slot, unsigned mult, uint32_t lba)
 {
-    int rc = ata_read_sectors(IF_MD(0, ) lba, 1, layout.sectors[slot]);
-    if (!rc)
-        rc = ata_read_sectors(IF_MD(0, ) lba, 1, readback);
-    if (!rc && memcmp(readback, layout.sectors[slot], 512))
-        rc = -201;
+    struct layout_attempt *a = &upload_attempts[upload_probe.count++];
+    memset(a, 0, sizeof(*a));
+    a->slot = slot;
+    a->multiplier = mult;
+    a->lba = lba;
+    a->rc = a->repeat_rc = -200;
+    return a;
+}
+
+static int read_layout_sector(unsigned slot, unsigned mult, uint32_t lba)
+{
+    struct layout_attempt *a = new_attempt(slot, mult, lba);
+    a->rc = ata_read_sectors(IF_MD(0, ) lba, 1, layout.sectors[slot]);
+    if (!a->rc) {
+        memcpy(a->sectors[0], layout.sectors[slot], 512);
+        a->repeat_rc = ata_read_sectors(IF_MD(0, ) lba, 1, a->sectors[1]);
+    }
+    int rc = a->rc ? a->rc : a->repeat_rc;
+    if (!rc) {
+        a->matches = !memcmp(a->sectors[0], a->sectors[1], 512);
+        if (!a->matches)
+            rc = -201;
+    }
+    a->result = a->rc ? PROBE_READ_FAILED : a->repeat_rc ? PROBE_REPEAT_FAILED :
+                !a->matches ? PROBE_MISMATCH : PROBE_HEADER_OK;
     layout.rc[slot] = rc;
     if (!rc)
         layout.mask |= 1u << slot;
@@ -45,18 +66,20 @@ static int read_layout_sector(unsigned slot, uint32_t lba)
 static void read_layout(void)
 {
     memset(&layout, 0, sizeof(layout));
+    upload_probe.count = 0;
     for (unsigned i = 0; i < 5; ++i)
         layout.rc[i] = -200;
     if (RECORD->sector_size != 512) {
         layout.error = LAYOUT_DISK_SECTOR_SIZE;
         return;
     }
-    if (read_layout_sector(0, 0)) {
+    if (read_layout_sector(0, 1, 0)) {
         layout.error = LAYOUT_MBR_READ;
         return;
     }
     const uint8_t *mbr = layout.sectors[0];
     if (mbr[510] != 0x55 || mbr[511] != 0xaa) {
+        upload_attempts[0].result = PROBE_SIGNATURE;
         layout.error = LAYOUT_MBR_SIGNATURE;
         return;
     }
@@ -75,10 +98,15 @@ static void read_layout(void)
         }
         for (unsigned mult = 1; mult <= 8; mult <<= 1) {
             if (((uint64_t)start + count) * mult > total ||
-                (uint64_t)start * mult > UINT32_MAX)
+                (uint64_t)start * mult > UINT32_MAX) {
+                uint64_t lba = (uint64_t)start * mult;
+                struct layout_attempt *a = new_attempt(i + 1, mult, (uint32_t)lba);
+                a->lba_high = lba >> 32;
+                a->result = PROBE_BOUNDS;
                 continue;
+            }
             layout.lba[i] = start * mult;
-            if (read_layout_sector(i + 1, start * mult))
+            if (read_layout_sector(i + 1, mult, start * mult))
                 continue;
             const uint8_t *v = layout.sectors[i + 1];
             unsigned bytes = v[11] | ((unsigned)v[12] << 8);
@@ -89,6 +117,8 @@ static void read_layout(void)
                 fat_slot = i + 1;
                 break;
             }
+            upload_attempts[upload_probe.count - 1].result =
+                v[510] != 0x55 || v[511] != 0xaa ? PROBE_SIGNATURE : PROBE_SECTOR_SIZE;
         }
     }
     if (!scale)
@@ -102,8 +132,35 @@ static void read_layout(void)
         layout.lba[i] = start * scale;
         if (i + 1 == fat_slot)
             continue;
-        read_layout_sector(i + 1, start * scale);
+        if (!read_layout_sector(i + 1, scale, start * scale))
+            upload_attempts[upload_probe.count - 1].result = PROBE_PARTITION_HEADER;
     }
+}
+
+static void save_ata_diagnostics(const struct storage_info *info)
+{
+    extern void upload_ata_state(uint32_t *, uint32_t *);
+    const unsigned short *id = ata_get_identify();
+    upload_probe.magic = 0x53545031;
+    upload_probe.version = 1;
+    upload_ata_state(&upload_probe.flags, &upload_probe.pio_time);
+    upload_probe.dma_mode = ata_get_dma_mode();
+    upload_probe.logical_bytes = info->sector_size;
+    upload_probe.driver_phys_mult = info->phys_sector_mult;
+    upload_probe.identify106 = id[106];
+    upload_probe.identify117 = id[117];
+    upload_probe.identify118 = id[118];
+    if (!(upload_probe.flags & 1)) {
+        uint64_t logical = (id[106] & 0xd000) == 0x5000 ?
+                           ((uint64_t)id[118] << 16 | id[117]) * 2 : 512;
+        uint64_t physical = (id[106] & 0xe000) == 0x6000 ?
+                            logical << (id[106] & 15) : logical;
+        upload_probe.physical_bytes = physical <= UINT32_MAX ? physical : 0;
+    }
+    for (unsigned i = 0; i < 40; ++i)
+        upload_probe.model[i] = id[27 + i / 2] >> (i % 2 ? 0 : 8);
+    for (unsigned i = 0; i < 8; ++i)
+        upload_probe.revision[i] = id[23 + i / 2] >> (i % 2 ? 0 : 8);
 }
 
 static void save_diagnostics(void)
@@ -191,6 +248,7 @@ void main(void)
         RECORD->sectors_low = (uint32_t)info.num_sectors;
         RECORD->sectors_high = (uint32_t)((uint64_t)info.num_sectors >> 32);
         RECORD->phase = 3;
+        save_ata_diagnostics(&info);
         read_layout();
         memset(UPLOAD_RESULT, 0, sizeof(*UPLOAD_RESULT));
         UPLOAD_RESULT->magic = 0x55504c32;

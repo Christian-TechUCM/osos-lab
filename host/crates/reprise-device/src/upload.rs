@@ -200,12 +200,18 @@ fn inspect_bulk(
     bulk: &mut impl BulkTransport,
     nonce: &[u8; 16],
     size: u32,
+    directory: Option<&std::path::Path>,
     log: &mut impl FnMut(String),
 ) -> Result<Status> {
-    bulk.diagnostics(log);
+    let status = bulk.status(nonce, size);
+    let directory = match &status {
+        Ok(status) if status.state() == COMPLETE && status.rc() == 0 => None,
+        _ => directory,
+    };
+    bulk.diagnostics(directory, log);
     let mut acknowledged = false;
     let result = (|| {
-        let status = bulk.status(nonce, size)?;
+        let status = status?;
         log(status.summary());
         if status.state() != COMPLETE {
             return Err(invalid(format!(
@@ -359,7 +365,7 @@ impl Session {
         let (launch, launched) = self.launch_helper(&image, || progress(&mut emit, "launch", 0, 1));
         let transfer_result = launch.and_then(|()| {
             let mut bulk = open_bulk(&info, helper.usb, &mut log)?;
-            bulk.diagnostics(&mut log);
+            bulk.diagnostics(None, &mut log);
             let result = transfer(&mut bulk, input, &nonce, size, &mut emit);
             if result.is_err() {
                 if let Err(error) = bulk.command(CANCEL, &nonce) {
@@ -459,9 +465,21 @@ impl Session {
     }
 
     pub fn inspect_storage_with_log(
+        self,
+        helper: &UploadHelper,
+        required_bytes: u32,
+        log: impl FnMut(String),
+    ) -> Result<(Self, StorageReport)> {
+        self.inspect_storage_with_diagnostics(helper, required_bytes, None, log)
+    }
+
+    /// Save successful sector reads in an existing directory, including failed inspections.
+    /// Diagnostic failures are logged without preventing helper cleanup.
+    pub fn inspect_storage_with_diagnostics(
         mut self,
         helper: &UploadHelper,
         required_bytes: u32,
+        directory: Option<&std::path::Path>,
         mut log: impl FnMut(String),
     ) -> Result<(Self, StorageReport)> {
         helper.validate_platform()?;
@@ -485,7 +503,7 @@ impl Session {
         let (launch, _) = self.launch_helper(&image, || {});
         let operation = launch.and_then(|()| {
             let mut bulk = open_bulk(&info, helper.usb, &mut log)?;
-            inspect_bulk(&mut bulk, &nonce, required_bytes, &mut log)
+            inspect_bulk(&mut bulk, &nonce, required_bytes, directory, &mut log)
         });
         if let Err(error) = &operation {
             log(format!("Storage inspection failed: {error}"));

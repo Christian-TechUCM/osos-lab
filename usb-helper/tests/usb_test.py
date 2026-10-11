@@ -27,6 +27,52 @@ unsigned get_descriptor(unsigned type, unsigned req, unsigned value, unsigned in
     return size;
 }
 """)
+        helper = (HERE / "usb.c").read_text()
+        control = helper[
+            helper.index("static bool control(") : helper.index("/* Replaces Rockbox")
+        ]
+        with source.open("a") as stream:
+            stream.write(
+                """
+#include "layout.h"
+#include <stdbool.h>
+struct usb_ctrlrequest { unsigned bRequestType, bRequest, wValue, wIndex, wLength; };
+static unsigned interface_number, activity, return_at;
+static bool finished, start_pending;
+static struct { uint8_t nonce[16]; uint32_t state; uint8_t rest[300]; } result;
+#define UPLOAD_RESULT (&result)
+#define USEC_TIMER 123
+#define USB_CONTROL_ACK 0
+static uint8_t status_data[320], probe_data[sizeof(struct layout_attempt)];
+struct storage_probe upload_probe;
+struct storage_diagnostics upload_diagnostics;
+struct layout_attempt upload_attempts[LAYOUT_ATTEMPTS];
+static unsigned response_size;
+static uint8_t response[sizeof(struct layout_attempt)];
+static void upload_fail(int rc) { (void)rc; }
+static void usb_core_control_response(int ack, const void *data, unsigned size) {
+    (void)ack;
+    response_size = size;
+    if (size) memcpy(response, data, size);
+}
+"""
+                + control
+                + """
+unsigned probe_request(unsigned type, unsigned request, unsigned value,
+                       unsigned index, unsigned length, void *out) {
+    struct usb_ctrlrequest req = {type, request, value, index, length};
+    upload_probe.count = 2;
+    upload_attempts[1].lba = 394224;
+    memset(upload_attempts[1].sectors[0], 0x55, 512);
+    memset(upload_attempts[1].sectors[1], 0xaa, 512);
+    uint8_t nonce[16] = {0};
+    response_size = 0;
+    if (!control(&req, nonce, sizeof(nonce))) return 0;
+    memcpy(out, response, response_size);
+    return response_size;
+}
+"""
+            )
         subprocess.run(
             [
                 "cc",
@@ -53,6 +99,26 @@ unsigned get_descriptor(unsigned type, unsigned req, unsigned value, unsigned in
         output = ctypes.create_string_buffer(256)
         size = self.lib.get_descriptor(type, request, value, index, output)
         return output.raw[:size]
+
+    def test_probe_requests_preserve_legacy_sizes_and_bound_attempt_indices(self):
+        output = ctypes.create_string_buffer(1056)
+        request = self.lib.probe_request
+        self.assertEqual(request(0xA1, 0x52, 0, 0, 320, output), 320)
+        self.assertEqual(request(0xA1, 0x56, 0, 0, 312, output), 312)
+        self.assertEqual(request(0xA1, 0x57, 0, 0, 96, output), 96)
+        self.assertEqual(struct.unpack_from("<I", output, 8)[0], 2)
+        self.assertEqual(request(0xA1, 0x58, 1, 0, 1056, output), 1056)
+        self.assertEqual(struct.unpack_from("<I", output, 8)[0], 394224)
+        self.assertEqual(output.raw[32:544], bytes([0x55]) * 512)
+        self.assertEqual(output.raw[544:], bytes([0xAA]) * 512)
+        for type_, req, value, index, length in [
+            (0xA1, 0x58, 2, 0, 1056),
+            (0xA1, 0x58, 1, 1, 1056),
+            (0xA1, 0x58, 1, 0, 512),
+            (0x21, 0x58, 1, 0, 1056),
+            (0xA1, 0x57, 1, 0, 96),
+        ]:
+            self.assertEqual(request(type_, req, value, index, length, output), 0)
 
     def test_os_string_and_compatible_id(self):
         string = self.descriptor(0x80, 6, 0x03EE, 0)

@@ -21,6 +21,7 @@ static bool finished, receiving, stopping, start_pending, closed;
 static int pending_length = -1;
 static uint32_t activity, return_at;
 static uint8_t status_data[320] USB_DEVBSS_ATTR;
+static uint8_t probe_data[sizeof(struct layout_attempt)] USB_DEVBSS_ATTR;
 _Static_assert(sizeof(struct storage_diagnostics) <= sizeof(status_data), "diagnostics buffer");
 
 bool upload_usb_control_request(struct usb_ctrlrequest *req, uint8_t *data, size_t capacity)
@@ -143,8 +144,24 @@ static void completed(int ep, int dir, int status, int length)
 static bool control(struct usb_ctrlrequest *req, uint8_t *data, size_t capacity)
 {
     (void)capacity;
-    if (req->wIndex != interface_number || req->wValue != 0)
+    if (req->wIndex != interface_number)
         return false;
+    if (req->bRequestType == 0xa1 && req->bRequest == 0x58 &&
+        req->wValue < upload_probe.count && req->wLength == sizeof(struct layout_attempt)) {
+        memcpy(probe_data, &upload_attempts[req->wValue], sizeof(probe_data));
+        usb_core_control_response(USB_CONTROL_ACK, probe_data, sizeof(probe_data));
+        activity = USEC_TIMER;
+        return true;
+    }
+    if (req->wValue != 0)
+        return false;
+    if (req->bRequestType == 0xa1 && req->bRequest == 0x57 &&
+        req->wLength == sizeof(upload_probe)) {
+        memcpy(probe_data, &upload_probe, sizeof(upload_probe));
+        usb_core_control_response(USB_CONTROL_ACK, probe_data, sizeof(upload_probe));
+        activity = USEC_TIMER;
+        return true;
+    }
     if (req->bRequestType == 0xa1 && req->bRequest == 0x56 &&
         req->wLength == sizeof(upload_diagnostics)) {
         memcpy(status_data, &upload_diagnostics, sizeof(upload_diagnostics));

@@ -65,3 +65,13 @@
      if (!ata_powered)
          ata_power_up();
      if (sector + count > total_sectors)
+@@ -1246,3 +1249,9 @@
++void upload_ata_state(uint32_t *flags, uint32_t *pio_time)
++{
++    *flags = ceata | (ata_dma << 1) | (ata_lba48 << 2);
++    *pio_time = ceata ? 0 : ATA_PIO_TIME;
++}
++
+ unsigned short* ata_get_identify(void)
+ {
+     return identify_info;
