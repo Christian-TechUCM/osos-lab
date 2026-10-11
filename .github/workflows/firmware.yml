@@ -82,6 +82,12 @@ jobs:
             cargo build --locked --release --manifest-path host/Cargo.toml -j 8 -p reprise-cli
             cp host/target/release/reprise build/releases/reprise
           fi
+      - name: Check lyrics prototype
+        run: |
+          node --test experiments/lyrics/test_engine.mjs
+          "$CROSS_COMPILE"gcc -std=c99 -mcpu=arm926ej-s -mthumb -Os \
+            -ffreestanding -fno-builtin -Wall -Wextra -Werror \
+            -c experiments/lyrics/timeline.c -o .build/lyrics-timeline.o
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: firmware

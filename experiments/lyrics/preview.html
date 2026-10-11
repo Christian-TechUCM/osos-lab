@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reprise · Live lyrics lab</title>
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">REPRISE <span>/</span> LYRICS LAB 01</p>
+      <h1>Follow<br>every line.</h1>
+      <p class="description">Your music. Its original timing.<br>A live-lyrics study for the iPod Classic.</p>
+      <p class="badge">MAC PROTOTYPE · 320 × 240 DISPLAY</p>
+      <div class="controls">
+        <label class="file-label">Open lyrics JSON<input id="lyrics-file" type="file" accept=".json,application/json"></label>
+        <label class="file-label">Open matching audio<input id="audio-file" type="file" accept="audio/*,.m4a"></label>
+        <button id="demo" type="button">Reset to demo</button>
+      </div>
+      <p id="status" role="status">Demo timing · no audio loaded.</p>
+      <p class="note">Files stay in this browser. The preview uses line timing, not word timing. No firmware is installed by this page.</p>
+    </section>
+    <section class="player-area" aria-label="Lyrics player prototype">
+      <div class="device">
+        <div class="screen">
+          <header><span>Lyrics</span><span id="play-indicator">Ⅱ</span><span>▰</span></header>
+          <div class="track"><strong id="title">A little closer</strong><span id="artist">Reprise demo</span></div>
+          <div id="viewport" class="viewport" tabindex="0" aria-label="Lyrics"><div id="lines"></div></div>
+          <footer><span id="position">0:00</span><span id="line-count">Waiting for first line</span><span id="remaining">−0:30</span></footer>
+        </div>
+        <div class="wheel">
+          <button id="restart" class="menu" aria-label="Restart track">RESTART</button>
+          <button id="back" class="back" aria-label="Seek backward 10 seconds">◀◀</button>
+          <button id="forward" class="forward" aria-label="Seek forward 10 seconds">▶▶</button>
+          <button id="play" class="center" aria-label="Play">▶</button>
+          <span class="wheel-label">PLAY / PAUSE</span>
+        </div>
+      </div>
+      <div class="transport">
+        <label for="seek">Playback position</label>
+        <input id="seek" type="range" min="0" max="30000" value="0" step="100" aria-label="Playback position">
+        <div class="transport-row"><span id="source">DEMO CLOCK</span><label><input id="light" type="checkbox"> Light theme</label></div>
+      </div>
+      <audio id="audio" preload="metadata"></audio>
+    </section>
+  </main>
+  <script type="module" src="preview.mjs"></script>
+</body>
+</html>
