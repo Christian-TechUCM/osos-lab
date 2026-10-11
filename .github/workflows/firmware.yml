@@ -37,6 +37,7 @@ jobs:
           rustup toolchain install 1.96.0 --profile minimal --component rustfmt
           rustup default 1.96.0
           python -m pip install ruff==0.12.12
+          python -m pip install -r experiments/lyrics/requirements.txt
           python tools/setup.py
       - name: Check formatting and lint
         run: |

@@ -26,10 +26,18 @@ function clearAudio() {
   if (audioUrl) URL.revokeObjectURL(audioUrl);
   audioUrl = null; usingAudio = false; audioName = ''; audioDuration = 0;
 }
+function refreshBackground() {
+  const screen = document.querySelector('.screen');
+  screen.classList.toggle('ambient-off', !$('ambient').checked);
+  $('background-status').textContent = screen.classList.contains('album-background') && $('ambient').checked ?
+    'BLURRED ALBUM ART · STATIC' : ($('light').checked ? 'LIGHT BACKGROUND' : 'GITHUB DARK');
+}
 function load(data) {
   const validated = validateTrack(data);
   pause(); clearAudio();
   track = validated; position = 0; active = -2;
+  document.querySelector('.screen').classList.remove('album-background');
+  refreshBackground();
   $('title').textContent = track.track.title;
   $('artist').textContent = track.track.artist;
   $('seek').max = track.track.duration_ms;
@@ -109,7 +117,11 @@ $('back').addEventListener('click', () => seek(position - 10000));
 $('forward').addEventListener('click', () => seek(position + 10000));
 $('restart').addEventListener('click', () => seek(0));
 $('seek').addEventListener('input', event => seek(Number(event.target.value)));
-$('light').addEventListener('change', event => document.querySelector('.screen').classList.toggle('light', event.target.checked));
+$('light').addEventListener('change', event => {
+  document.querySelector('.screen').classList.toggle('light', event.target.checked);
+  refreshBackground();
+});
+$('ambient').addEventListener('change', refreshBackground);
 $('demo').addEventListener('click', () => { load(demo); $('status').textContent = 'Demo timing · no audio loaded.'; });
 $('lyrics-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
@@ -140,6 +152,12 @@ load(demo); requestAnimationFrame(tick);
 // The local server supplies only the explicitly selected song, never a library listing.
 if (location.protocol.startsWith('http')) {
   fetch('/track.json').then(response => response.ok ? response.json() : null).then(data => {
-    if (data) { load(data); setAudio('/audio', data.track.audio_filename); }
+    if (data) {
+      load(data); setAudio('/audio', data.track.audio_filename);
+      if (data.background?.album_art) {
+        document.querySelector('.screen').classList.add('album-background');
+        refreshBackground();
+      }
+    }
   }).catch(() => { $('status').textContent = 'Demo loaded. A local song can be opened using the file controls.'; });
 }

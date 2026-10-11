@@ -2,8 +2,9 @@
 
 This is a **Mac/browser proof of concept**, plus a portable C timeline core.
 It does not add a Lyrics screen to the installed firmware yet. The C core is
-outside `payload/`, so the firmware bundle contains only the existing Reprise
-features and the imported idle-clock fixes. No new firmware addresses are guessed.
+outside `payload/`, so the firmware bundle contains the existing Reprise
+features, the imported idle-clock fixes, and the GitHub Dark palette below, but
+no native Lyrics screen. No new firmware addresses are guessed.
 
 ## What works
 
@@ -18,6 +19,9 @@ features and the imported idle-clock fixes. No new firmware addresses are guesse
 - Export a JSON preview and a bounded binary sidecar for the future C reader.
 - Validate and search sidecars in portable C with no allocations or native
   firmware calls. The host tests exercise the actual C implementation.
+- Optionally extract embedded cover art and prepare a dark, multicolor blurred
+  background for the preview and a future native renderer. Bad/missing artwork
+  falls back to the plain theme without disabling lyrics.
 
 The first version has **line-level timing**. Word-by-word highlighting needs
 word timings. Enhanced LRC word markers are reduced to their enclosing line;
@@ -33,12 +37,12 @@ python3 -m venv .build/lyrics-venv
 .build/lyrics-venv/bin/python -m pip install -r experiments/lyrics/requirements.txt
 .build/lyrics-venv/bin/python tools/lyrics.py audit /path/to/music \
   --out .build/lyrics-private/audit.json
-.build/lyrics-venv/bin/python tools/lyrics.py export /path/to/song.m4a
-.build/lyrics-venv/bin/python tools/lyrics_preview.py --audio /path/to/song.m4a
+.build/lyrics-venv/bin/python tools/lyrics.py export /path/to/song.m4a --artwork
+.build/lyrics-venv/bin/python tools/lyrics_preview.py --audio /path/to/song.m4a --artwork
 ```
 
 Open <http://127.0.0.1:8766>. The server binds only to loopback and serves a fixed
-asset list, the selected track's lyrics, and that single audio file. It does not
+asset list, the selected track's lyrics/background, and that single audio file. It does not
 serve directories. Audio byte ranges support seeking. File controls also let
 you open exported JSON and matching audio directly in the browser.
 
@@ -54,6 +58,32 @@ The preview copy must have the same duration as the original. Audio files are
 opened read-only. Keep all real music, lyric exports, reports, and converted
 audio under the ignored `.build/lyrics-private/` directory, outside Git.
 Only invented sample lines are included in this repository.
+
+Add `--artwork` to the WAV preview command as well to enable cover colors.
+Artwork is prepared on the Mac once, not blurred on every playback frame. It
+retains spatial color variation from the cover and darkens it for readable text.
+This is a **static blurred backdrop**, not Apple's animated fluid background.
+The Album colors checkbox compares it with the plain theme. Opening another
+lyrics JSON clears the previous cover; JSON files do not grant arbitrary file
+access, so artwork preview currently requires the server's `--artwork` option.
+
+Exports add `<key>.background.png` and `<key>.background.bmap`. The native-format
+RGB565 bitmap is exactly 153,628 bytes (28-byte header plus 320 × 240 × 2 pixels).
+That is only an asset format, not a native screen implementation or a measured
+device-memory budget. Artwork inputs are capped at 8 MiB / 16 megapixels; the
+future firmware must load only the current track's background and validate it.
+
+## GitHub Dark palette
+
+`payload/theme.h` is the shared native/host color source: background `#0d1117`,
+ink `#e6edf3`, sidebar `#090c10`, and accent `#58a6ff`, following the palette
+published in [DexThemes' GitHub Dark comparison](https://www.dexthemes.com/articles/github-dark-vs-one-dark-vs-dracula-for-codex).
+Selection `#17345b` and border `#30363d` adapt that appearance to the iPod UI.
+The existing native dark-mode fill, text, clear, reflection, and bitmap paths
+use these colors. Light mode and semantic red/green icons remain unchanged;
+source PNGs are not overwritten. The upstream light idle-clock exception is
+preserved. The browser preview uses matching dark colors, not an exact model
+of Apple's font rasterizer or the LCD's RGB565 quantization.
 
 ## Validation
 
@@ -90,6 +120,17 @@ The prototype export filename identifies the local source path. **It is not an
 iTunesDB identifier and must not be used to bind a track on the iPod.**
 
 ## Firmware integration gates
+
+**Current blocker:** the checkout has annotation metadata but no decrypted Apple
+2.0.5 OSOS bytes for instruction/ABI verification. The pinned `osos.bin` is
+10,634,496 bytes, SHA-256
+`660eb6ff5f498bb1a75e85f1f9921bf0c753525a8bca9b4fa47ed260e5ad0f1e`
+(see `firmware/apple.json`). A full image assembly also needs the other pinned
+Apple inputs. The documented project decryption path uses an iPod in BootROM
+DFU as an AES helper; it executes a temporary device payload, so it is not a
+purely offline step. No acquisition, DFU session, or installation has been
+performed here. Obtaining verified saved inputs or separately authorizing a
+carefully planned device-assisted session is required before proceeding.
 
 1. Confirm the player clock units. The tracked Apple 2.0.5 analysis names
    `MediaPlayer_GetPosition` at `0x0816f704`, but its annotation explicitly says

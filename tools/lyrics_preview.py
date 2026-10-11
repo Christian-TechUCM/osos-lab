@@ -40,7 +40,7 @@ def byte_range(header, size):
     return start, end
 
 
-def handler(audio_path=None, track_data=None):
+def handler(audio_path=None, track_data=None, background=None):
     class PreviewHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             self.respond(body=True)
@@ -57,6 +57,9 @@ def handler(audio_path=None, track_data=None):
             elif path == "/track.json" and track_data is not None:
                 data = json.dumps(track_data, ensure_ascii=False).encode("utf-8")
                 content_type = "application/json; charset=utf-8"
+            elif path == "/background.png" and background is not None:
+                data = background
+                content_type = "image/png"
             elif path == "/audio" and audio_path is not None:
                 source = audio_path
                 data = b""
@@ -121,11 +124,22 @@ def main():
         help="Optional browser-compatible copy of the same recording",
     )
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument(
+        "--artwork",
+        action="store_true",
+        help="Prepare a static blurred cover-art backdrop on this Mac",
+    )
     args = parser.parse_args()
     track_data = None
+    background = None
     if args.audio:
         metadata, parsed = lyrics.read_track(args.audio)
         track_data = {"schema": 1, "track": metadata, **asdict(parsed)}
+        if args.artwork:
+            from lyrics_art import prepare
+
+            background, _, available, warning = prepare(args.audio)
+            track_data["background"] = {"album_art": available, "warning": warning}
     if args.preview_audio:
         if not args.audio:
             parser.error("--preview-audio requires the original --audio for lyrics")
@@ -138,7 +152,8 @@ def main():
         ):
             parser.error("preview copy must match the original recording duration")
     server = ThreadingHTTPServer(
-        ("127.0.0.1", args.port), handler(args.preview_audio or args.audio, track_data)
+        ("127.0.0.1", args.port),
+        handler(args.preview_audio or args.audio, track_data, background),
     )
     print(f"Lyrics preview: http://127.0.0.1:{server.server_port}", flush=True)
     try:

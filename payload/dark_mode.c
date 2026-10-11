@@ -6,15 +6,13 @@
 #include "cfw.h"
 #include "preferences.h"
 #include "patch.h"
+#include "theme.h"
 
 enum {
     DARK_MODE_OFF_RECORD = 0x304b5244, /* DRK0 */
     DARK_MODE_ON_RECORD = 0x314b5244,  /* DRK1 */
     BACKGROUND_LIGHT_MIN = 0xb0,
-    BACKGROUND_DARK_BASE = 0x18,
-    COVER_FLOW_BORDER_DARK = 0x38,
     TEXT_DARK_MAX = 0x80,
-    TEXT_LIGHT_BASE = 0xe8,
 };
 
 static unsigned int enabled;
@@ -100,15 +98,23 @@ PATCH_ARM void cfw_dark_mode_fill(void *surface, const void *rect,
                                 void *clip)
 {
     unsigned char mapped[4];
+    uint32_t rgb = CFW_THEME_BACKGROUND;
     int shade = -1;
     if (enabled && color[0] == color[1] && color[1] == color[2] &&
         color[0] >= BACKGROUND_LIGHT_MIN)
-        shade = BACKGROUND_DARK_BASE + (255 - color[0]) / 4;
+        shade = (255 - color[0]) / 4;
     /* CoverFlow_Backside_Border_Color (COLR 0x0dad05d8). */
-    else if (enabled && color[0] == 0x7e && color[1] == 0x81 && color[2] == 0x83)
-        shade = COVER_FLOW_BORDER_DARK;
+    else if (enabled && color[0] == 0x7e && color[1] == 0x81 && color[2] == 0x83) {
+        rgb = CFW_THEME_BORDER;
+        shade = 0;
+    } else if (enabled && color[0] == 35 && color[1] == 108 && color[2] == 196) {
+        rgb = CFW_THEME_SELECTION;
+        shade = 0;
+    }
     if (shade >= 0) {
-        mapped[0] = mapped[1] = mapped[2] = shade;
+        mapped[0] = CFW_THEME_RED(rgb) + shade;
+        mapped[1] = CFW_THEME_GREEN(rgb) + shade;
+        mapped[2] = CFW_THEME_BLUE(rgb) + shade;
         mapped[3] = color[3];
         color = mapped;
     }
@@ -117,8 +123,11 @@ PATCH_ARM void cfw_dark_mode_fill(void *surface, const void *rect,
 
 PATCH_ARM void cfw_dark_mode_clear_color(int red, int green, int blue, int alpha)
 {
-    if (enabled)
-        red = green = blue = BACKGROUND_DARK_BASE * 0x10000 / 255;
+    if (enabled) {
+        red = CFW_THEME_RED(CFW_THEME_BACKGROUND) * 0x10000 / 255;
+        green = CFW_THEME_GREEN(CFW_THEME_BACKGROUND) * 0x10000 / 255;
+        blue = CFW_THEME_BLUE(CFW_THEME_BACKGROUND) * 0x10000 / 255;
+    }
     osos_gles_clear_color(red, green, blue, alpha);
 }
 
@@ -126,8 +135,7 @@ PATCH_ARM uint32_t cfw_dark_mode_reflection_blend(uint32_t pixel, uint32_t backg
                                                 int weight)
 {
     if (enabled)
-        background = ((BACKGROUND_DARK_BASE >> 3) << 11) |
-                     ((BACKGROUND_DARK_BASE >> 2) << 5) | (BACKGROUND_DARK_BASE >> 3);
+        background = CFW_THEME_RGB565(CFW_THEME_BACKGROUND);
     return osos_rgb565_blend(pixel, background, weight);
 }
 
@@ -136,7 +144,15 @@ PATCH_ARM void cfw_dark_mode_text_color(void *context, const unsigned char *colo
     unsigned char mapped[4];
     if (enabled && color[0] == color[1] && color[1] == color[2] &&
         color[0] <= TEXT_DARK_MAX) {
-        mapped[0] = mapped[1] = mapped[2] = TEXT_LIGHT_BASE - color[0] / 2;
+        mapped[0] = CFW_THEME_RED(CFW_THEME_INK) - color[0] / 2;
+        mapped[1] = CFW_THEME_GREEN(CFW_THEME_INK) - color[0] / 2;
+        mapped[2] = CFW_THEME_BLUE(CFW_THEME_INK) - color[0] / 2;
+        mapped[3] = color[3];
+        color = mapped;
+    } else if (enabled && color[0] == 35 && color[1] == 108 && color[2] == 196) {
+        mapped[0] = CFW_THEME_RED(CFW_THEME_ACCENT);
+        mapped[1] = CFW_THEME_GREEN(CFW_THEME_ACCENT);
+        mapped[2] = CFW_THEME_BLUE(CFW_THEME_ACCENT);
         mapped[3] = color[3];
         color = mapped;
     }

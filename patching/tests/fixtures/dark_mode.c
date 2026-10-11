@@ -115,11 +115,12 @@ static void text_color(void *target, const unsigned char *color)
     memcpy(drawn, color, 4);
 }
 
-static int clear_rgb, clear_alpha;
+static int clear_rgb[3], clear_alpha;
 static void clear_color(int red, int green, int blue, int alpha)
 {
-    assert(red == green && green == blue);
-    clear_rgb = red;
+    clear_rgb[0] = red;
+    clear_rgb[1] = green;
+    clear_rgb[2] = blue;
     clear_alpha = alpha;
 }
 
@@ -221,9 +222,12 @@ int main(void)
         assert(!memcmp(drawn, idle_color, 4));
         for (unsigned i = 0; i < 3; i++) {
             cfw_dark_mode_fill(&surface, &model, fills[i], 7, &controller);
-            if (dark && i < 2) {
-                unsigned char shade = i ? 0x38 : 0x18;
-                assert(drawn[0] == shade && drawn[1] == shade && drawn[2] == shade);
+            if (dark) {
+                uint32_t rgb = i == 0 ? CFW_THEME_BACKGROUND :
+                               i == 1 ? CFW_THEME_BORDER : CFW_THEME_SELECTION;
+                assert(drawn[0] == CFW_THEME_RED(rgb));
+                assert(drawn[1] == CFW_THEME_GREEN(rgb));
+                assert(drawn[2] == CFW_THEME_BLUE(rgb));
                 assert(drawn[3] == fills[i][3]);
             } else {
                 assert(!memcmp(drawn, fills[i], 4));
@@ -231,14 +235,26 @@ int main(void)
         }
         for (unsigned i = 0; i < 2; i++) {
             cfw_dark_mode_text_color(&surface, texts[i]);
-            assert(drawn[0] == (dark && !i ? 0xe8 : texts[i][0]));
+            assert(drawn[0] == (dark && !i ? 0xe6 : texts[i][0]));
+            assert(drawn[1] == (dark && !i ? 0xed : texts[i][1]));
+            assert(drawn[2] == (dark && !i ? 0xf3 : texts[i][2]));
             assert(drawn[3] == texts[i][3]);
         }
         cfw_dark_mode_clear_color(0x10000, 0x10000, 0x10000, 0x4321);
-        assert(clear_rgb == (dark ? 0x18 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[0] == (dark ? 0x0d * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[1] == (dark ? 0x11 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[2] == (dark ? 0x17 * 0x10000 / 255 : 0x10000));
         assert(clear_alpha == 0x4321);
         assert(cfw_dark_mode_reflection_blend(0xabcd, 0xffff, 0x8000) == 0x1234);
-        assert(blend_background == (dark ? 0x18c3u : 0xffffu));
+        assert(blend_background == (dark ? CFW_THEME_RGB565(CFW_THEME_BACKGROUND) : 0xffffu));
+        cfw_dark_mode_text_color(&surface, fills[2]);
+        assert(drawn[0] == (dark ? 0x58 : 35));
+        assert(drawn[1] == (dark ? 0xa6 : 108));
+        assert(drawn[2] == (dark ? 0xff : 196));
+        assert(drawn[3] == 91);
+        const unsigned char warning[] = {248, 81, 73, 64};
+        cfw_dark_mode_fill(&surface, &model, warning, 7, &controller);
+        assert(!memcmp(drawn, warning, 4));
         cfw_dark_mode_load();
         assert(cfw_dark_mode_enabled() == dark);
     }

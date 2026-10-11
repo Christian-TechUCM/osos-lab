@@ -4,6 +4,7 @@
 import json
 
 from .bitmap import encode_bmap, read_png
+from .theme import map_pixels
 from .ui.resources import word
 
 
@@ -35,6 +36,7 @@ def generate(resources, manifest, directory):
     ):
         resource_id = int(entry["id"], 0)
         width, height, pixels = read_png(manifest.parent / entry["file"])
+        pixels = map_pixels(pixels, entry["file"])
         expected = native_width, native_height
         if (width, height) != expected:
             raise ValueError(

@@ -154,13 +154,25 @@ def read_track(path):
     return metadata, parse_lrc(lyrics)
 
 
-def export_track(path, destination):
+def export_track(path, destination, artwork=False):
     metadata, lyrics = read_track(path)
     # This identifies a local export, not an iTunesDB persistent ID. Track binding
     # on the iPod is a separate integration step; do not guess based on filenames.
     digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
     data = {"schema": 1, "track": metadata, **asdict(lyrics)}
     destination.mkdir(parents=True, exist_ok=True)
+    if artwork:
+        from lyrics_art import prepare
+
+        png, bitmap, available, warning = prepare(path)
+        (destination / f"{digest}.background.png").write_bytes(png)
+        (destination / f"{digest}.background.bmap").write_bytes(bitmap)
+        data["background"] = {
+            "png": f"{digest}.background.png",
+            "bmap": f"{digest}.background.bmap",
+            "album_art": available,
+            "warning": warning,
+        }
     (destination / f"{digest}.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -218,6 +230,11 @@ def main():
     export = commands.add_parser("export")
     export.add_argument("audio", type=Path)
     export.add_argument("--out", type=Path, default=Path(".build/lyrics-private"))
+    export.add_argument(
+        "--artwork",
+        action="store_true",
+        help="Prepare an album-colored PNG and native RGB565 BMap",
+    )
     args = parser.parse_args()
     if args.command == "audit":
         if not args.library.is_dir():
@@ -228,7 +245,7 @@ def main():
             args.out.write_text(result, encoding="utf-8")
         print(result, end="")
     else:
-        key, mode = export_track(args.audio, args.out)
+        key, mode = export_track(args.audio, args.out, args.artwork)
         print(json.dumps({"export": str(args.out / f"{key}.json"), "mode": mode}))
 
 
