@@ -2,7 +2,7 @@
 //! Assemble disk firmware and the dual-boot installer from local Apple inputs.
 
 use crate::{invalid, read_file, sha256, write_directory, Result, VerifiedBundle};
-use reprise_device::{firmware, SysCfg};
+use reprise_device::{firmware, BootloaderFingerprint, BootloaderReport, SysCfg};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::Path};
 
@@ -252,6 +252,37 @@ pub fn nor_installer(bundle: &VerifiedBundle) -> Result<Vec<u8>> {
     }
     .check(image)?;
     Ok(image.to_vec())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BootloaderAction {
+    Keep,
+    Install,
+    Upgrade,
+}
+
+impl BootloaderAction {
+    /// The installed report must come from a successful bootloader inspection.
+    pub fn for_installed(installed: &BootloaderReport, expected: &BootloaderFingerprint) -> Self {
+        if installed.fingerprint == *expected {
+            Self::Keep
+        } else if installed.apple {
+            Self::Install
+        } else {
+            Self::Upgrade
+        }
+    }
+}
+
+pub fn bootloader_fingerprint(bundle: &VerifiedBundle) -> Result<BootloaderFingerprint> {
+    let image = nor_installer(bundle)?;
+    let spec: NorTemplate = serde_json::from_slice(bundle.file("nor", "descriptor")?)?;
+    let header = &image[spec.bootloader_offset - 0x800..spec.bootloader_offset];
+    let current =
+        BootloaderFingerprint::from_code(&image[spec.bootloader_offset..], word(header, 8));
+    current.validate().map_err(|e| invalid(e.to_string()))?;
+    Ok(current)
 }
 
 pub struct Artifacts {

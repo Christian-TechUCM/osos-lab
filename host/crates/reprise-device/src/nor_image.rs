@@ -109,7 +109,7 @@ impl<'a> AppleNorImage<'a> {
 }
 
 // Check the bounded reset branch and the EFI volume header checksum.
-fn validate_volume(plain: &[u8]) -> Result<()> {
+pub(crate) fn validate_volume(plain: &[u8]) -> Result<()> {
     let volume = plain
         .get(0x100..)
         .ok_or_else(|| invalid("Missing Apple EFI volume"))?;

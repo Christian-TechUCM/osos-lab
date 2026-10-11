@@ -82,7 +82,7 @@ pub(super) fn open_bulk(
     usb: UsbIdentity,
     log: &mut impl FnMut(String),
 ) -> Result<Bulk> {
-    let context = Context::new().map_err(|e| usb_error("upload context", e))?;
+    let context = crate::usb::context()?;
     let deadline = Instant::now() + Duration::from_secs(90);
     let mut last_error = None;
     let mut other_ports = std::collections::BTreeSet::new();

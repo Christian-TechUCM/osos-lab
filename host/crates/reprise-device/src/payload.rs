@@ -300,3 +300,43 @@ pub(crate) fn image_hook() -> Vec<u8> {
     );
     a.finish()
 }
+
+/// Rockbox's success tones followed by its watchdog reset. Does not return.
+pub(crate) fn restart() -> Vec<u8> {
+    let mut arm = Arm::default();
+    // Match usec_timer_init and piezo_tone in the pinned Rockbox bootloader.
+    arm.literal(4, 0x3c500000);
+    arm.code.extend([
+        0xe5941044, 0xe3c11c01, 0xe5841044, // PLLMODE: select OSC0
+        0xe5941010, 0xe1a01801, 0xe1a01821, 0xe5841010, // CG16_RTIME: OSC0 / 1
+        0xe594104c, 0xe3c11020, 0xe584104c, // enable timer clock
+    ]);
+    arm.literal(5, 0x3c7000a0);
+    arm.literal(1, 0x440);
+    arm.code.extend([
+        0xe5851000, 0xe3a0100b, 0xe5851010, // TECON, TEPRE: 1 MHz
+        0xe3e01000, 0xe5851008, 0xe3a01003, 0xe5851004, // TEDATA0, TECMD
+    ]);
+    arm.literal(6, 0x3cf00200);
+    arm.literal(7, 0x60e);
+    for (period, duration) in [(1000, 100_000), (500, 150_000)] {
+        arm.literal(0, duration);
+        arm.code.extend([0xe5951014, 0xe0810000]); // stop = TECNT + duration
+        arm.value(2, period / 2);
+        let tone = arm.code.len();
+        arm.code.extend([
+            0xe2277001, 0xe5867000, // toggle piezo GPIO
+            0xe5953014, 0xe0833002, // next edge = TECNT + half period
+        ]);
+        let delay = arm.code.len();
+        arm.code.extend([0xe5951014, 0xe0511003, 0x4a000000]);
+        arm.branch_to(arm.code.len() - 1, delay);
+        arm.code.extend([0xe5951014, 0xe0511000, 0x4a000000]);
+        arm.branch_to(arm.code.len() - 1, tone);
+    }
+    arm.code.extend([0xe3c77001, 0xe5867000]); // silence before resetting
+    arm.literal(0, 0x3c800000);
+    arm.literal(1, 0x100000);
+    arm.code.extend([0xe5801000, 0xeafffffe]); // str r1, [r0]; b .
+    arm.finish()
+}

@@ -134,6 +134,32 @@ impl<T: Transport> Dfu<T> {
         Ok(())
     }
 
+    pub(crate) fn restart(&mut self) -> Result<()> {
+        if self.state()? != 2 {
+            return Err(invalid("Restart requires checked dfuIDLE"));
+        }
+        self.rom_clean()?;
+        let mut wire = vec![b'Z'; payload::PREFIX_SIZE];
+        wire.extend_from_slice(&payload::restart());
+        let n = self.transport.write(0x21, 1, 0, 0, &wire)?;
+        exact("Restart payload download", n, wire.len())?;
+        self.rom_clean()?;
+        let n = self.transport.read(0xa1, 2, 0, 0, &mut [0; 64])?;
+        exact("Restart initial upload", n, 64)?;
+        // Only the final trigger may lose USB. No response or DFU cleanup is expected.
+        match self.transport.read(0xa0, 0xfe, 0xeaff, 6, &mut [0; 64]) {
+            Err(crate::Error::Usb {
+                source:
+                    rusb::Error::NoDevice | rusb::Error::Pipe | rusb::Error::Timeout | rusb::Error::Io,
+                ..
+            }) => Ok(()),
+            Err(error) => Err(error),
+            Ok(_) => Err(invalid(
+                "Restart payload returned unexpectedly; restart with Menu + Center",
+            )),
+        }
+    }
+
     pub(crate) fn execute(&mut self, payload: &[u8]) -> Result<[u8; 64]> {
         if payload.len() + payload::PREFIX_SIZE > 0x400 {
             return Err(invalid("Read payload exceeds DFU buffer"));

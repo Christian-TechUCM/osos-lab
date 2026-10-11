@@ -45,8 +45,24 @@ impl<T: Transport> Dfu<T> {
 
     pub(crate) fn dump_nor_checked(
         &mut self,
+        emit: impl FnMut(NorProgress) -> Result<()>,
+    ) -> Result<NorDump> {
+        self.read_nor_checked(0, NOR_SIZE, emit)
+    }
+
+    pub(crate) fn read_nor_checked(
+        &mut self,
+        start_offset: usize,
+        length: usize,
         mut emit: impl FnMut(NorProgress) -> Result<()>,
     ) -> Result<NorDump> {
+        if length < 64
+            || start_offset
+                .checked_add(length)
+                .is_none_or(|end| end > NOR_SIZE)
+        {
+            return Err(invalid("Invalid NOR read range"));
+        }
         let operation = (|| {
             if self.state()? != 2 {
                 return Err(invalid(
@@ -62,43 +78,48 @@ impl<T: Transport> Dfu<T> {
             })?;
             self.execute(&payload::nor_init())?;
             let start = Instant::now();
-            let mut bytes = Vec::with_capacity(NOR_SIZE);
-            let mut next_progress = 16384;
-            for offset in (0..NOR_SIZE).step_by(512) {
-                bytes.extend_from_slice(&self.nor_fast_block(offset, 512.min(NOR_SIZE - offset))?);
-                if bytes.len() >= next_progress || bytes.len() == NOR_SIZE {
+            let mut bytes = Vec::with_capacity(length);
+            let progress_step = length.div_ceil(100).clamp(512, 16384);
+            let mut next_progress = progress_step;
+            for offset in (0..length).step_by(512) {
+                bytes.extend_from_slice(
+                    &self.nor_fast_block(start_offset + offset, 512.min(length - offset))?,
+                );
+                if bytes.len() >= next_progress || bytes.len() == length {
                     emit(NorProgress {
                         stage: "nor_read",
                         completed: bytes.len(),
-                        total: NOR_SIZE,
+                        total: length,
                     })?;
-                    next_progress = bytes.len() + 16384;
+                    next_progress = bytes.len() + progress_step;
                 }
             }
 
             // Shifted boundaries expose SPI/FIFO tail errors.
-            next_progress = 16384;
-            for offset in (1..NOR_SIZE).step_by(509) {
-                let size = 509.min(NOR_SIZE - offset);
-                let shifted = self.nor_fast_block(offset, size)?;
+            next_progress = progress_step;
+            for offset in (1..length).step_by(509) {
+                let size = 509.min(length - offset);
+                let shifted = self.nor_fast_block(start_offset + offset, size)?;
                 if shifted != bytes[offset..offset + size] {
                     return Err(invalid(format!(
                         "NOR shifted read disagrees at {offset:#x}"
                     )));
                 }
-                if offset + size >= next_progress || offset + size == NOR_SIZE {
+                if offset + size >= next_progress || offset + size == length {
                     emit(NorProgress {
                         stage: "nor_verify",
                         completed: offset + size,
-                        total: NOR_SIZE,
+                        total: length,
                     })?;
-                    next_progress = offset + size + 16384;
+                    next_progress = offset + size + progress_step;
                 }
             }
 
             // Cross-check both edges through the 64-byte reply path.
-            for offset in [0, NOR_SIZE - 64] {
-                if self.nor_bytes(offset as u32, 64, 60)? != bytes[offset..offset + 64] {
+            for offset in [0, length - 64] {
+                if self.nor_bytes((start_offset + offset) as u32, 64, 60)?
+                    != bytes[offset..offset + 64]
+                {
                     return Err(invalid(format!("NOR edge read disagrees at {offset:#x}")));
                 }
             }

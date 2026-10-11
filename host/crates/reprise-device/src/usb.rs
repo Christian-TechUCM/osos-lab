@@ -37,6 +37,24 @@ pub(crate) fn usb_error(operation: &'static str, source: rusb::Error) -> Error {
     Error::Usb { operation, source }
 }
 
+pub(crate) fn context() -> Result<Context> {
+    #[cfg(target_os = "macos")]
+    {
+        // libusb_exit can deadlock with Darwin's detach callback after a reset.
+        // Retain the context for the process lifetime; device handles still close.
+        static CONTEXT: std::sync::Mutex<Option<Context>> = std::sync::Mutex::new(None);
+        let mut context = CONTEXT
+            .lock()
+            .map_err(|_| invalid("USB context lock poisoned"))?;
+        if context.is_none() {
+            *context = Some(Context::new().map_err(|e| usb_error("context", e))?);
+        }
+        Ok(context.as_ref().unwrap().clone())
+    }
+    #[cfg(not(target_os = "macos"))]
+    Context::new().map_err(|e| usb_error("context", e))
+}
+
 fn candidates(context: &Context) -> Result<Vec<(Device<Context>, DeviceInfo)>> {
     let devices = context.devices().map_err(|e| usb_error("enumeration", e))?;
     let mut found = Vec::new();
@@ -74,7 +92,7 @@ fn candidates(context: &Context) -> Result<Vec<(Device<Context>, DeviceInfo)>> {
 
 /// Enumerate Apple DFU, recovery, and Classic disk-mode devices.
 pub fn discover() -> Result<Vec<DeviceInfo>> {
-    let context = Context::new().map_err(|e| usb_error("context", e))?;
+    let context = context()?;
     Ok(candidates(&context)?
         .into_iter()
         .map(|(_, info)| info)
@@ -126,7 +144,7 @@ pub struct Session {
 impl Session {
     /// Claim the selected DFU device, or the sole connected candidate.
     pub fn open(selector: Option<DeviceSelector>) -> Result<Self> {
-        let context = Context::new().map_err(|e| usb_error("context", e))?;
+        let context = context()?;
         let candidates = candidates(&context)?;
         #[cfg(windows)]
         let dfu_count = candidates
@@ -225,6 +243,63 @@ impl Session {
         self.operation_ready = false;
         self.dfu.transport.timeout = Duration::from_secs(2);
         let result = self.dfu.dump_nor_checked(emit);
+        self.dfu.transport.timeout = TIMEOUT;
+        self.operation_ready = result.is_ok();
+        result
+    }
+
+    /// Read only the first NOR loader and verify its device-specific signatures.
+    pub fn inspect_bootloader(
+        &mut self,
+        mut emit: impl FnMut(crate::NorProgress) -> Result<()>,
+    ) -> Result<crate::BootloaderReport> {
+        if !self.operation_ready {
+            return Err(invalid(
+                "Bootloader inspection requires successful checks on this session",
+            ));
+        }
+        self.operation_ready = false;
+        self.dfu.transport.timeout = Duration::from_secs(2);
+        let result = (|| {
+            emit(crate::bootloader::progress(0))?;
+            let header = self
+                .dfu
+                .read_nor_checked(0x8000, 0x800, |p| {
+                    emit(crate::bootloader::inspection_progress(p, 0, 5))
+                })?
+                .bytes;
+            let size = crate::bootloader::header_size(&header)?;
+            let body = self
+                .dfu
+                .read_nor_checked(0x8800, size, |p| {
+                    emit(crate::bootloader::inspection_progress(p, 5, 90))
+                })?
+                .bytes;
+            let decryptions = if header[7] == 1 { 3 } else { 2 };
+            let mut decrypted = 0;
+            let report = crate::bootloader::verify(&header, &body, |cipher| {
+                let start = 90 + 9 * decrypted / decryptions;
+                let end = 90 + 9 * (decrypted + 1) / decryptions;
+                let result = self
+                    .dfu
+                    .decrypt_key_checked(cipher, crate::DecryptOptions::default(), None, 2, |p| {
+                        emit(crate::bootloader::inspection_progress(
+                            crate::NorProgress {
+                                stage: p.stage,
+                                completed: p.completed,
+                                total: p.total,
+                            },
+                            start,
+                            end,
+                        ))
+                    })
+                    .map(|output| output.plaintext);
+                decrypted += 1;
+                result
+            })?;
+            emit(crate::bootloader::progress(100))?;
+            Ok(report)
+        })();
         self.dfu.transport.timeout = TIMEOUT;
         self.operation_ready = result.is_ok();
         result

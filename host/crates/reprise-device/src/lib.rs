@@ -2,6 +2,7 @@
 
 //! Classic DFU checks, NOR reads, AES decryption, and verified file uploads.
 
+mod bootloader;
 mod decrypt;
 mod dfu;
 pub mod firmware;
@@ -21,6 +22,7 @@ pub use upload::{
     Uploaded, MAX_UPLOAD_SIZE,
 };
 
+pub use bootloader::{BootloaderFingerprint, BootloaderReport};
 pub use decrypt::{DecryptOptions, DecryptProgress, DecryptReport, Decrypted};
 pub use img1::classic_img1_body_range;
 pub use nor::{NorDump, NorProgress, NorReport, NOR_SIZE};

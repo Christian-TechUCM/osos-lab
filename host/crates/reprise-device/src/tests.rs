@@ -960,3 +960,112 @@ fn nor_download_uses_stock_dfu_packets_and_stops_on_rejection() {
         }
     }
 }
+
+#[test]
+fn partial_nor_read_stays_inside_requested_range_and_cross_checks_it() {
+    let bytes: Vec<u8> = (0..NOR_SIZE).map(|n| (n * 37) as u8).collect();
+    let start = 0x8800;
+    let length = 1072;
+    for corrupt in [false, true] {
+        let mut script = Script::default();
+        script.state(2);
+        script.echo_sweep();
+        script.probe(&payload::nor_init(), &[0; 64]);
+        for n in (0..length).step_by(512) {
+            script.fast_nor(&bytes, start + n, 512.min(length - n));
+        }
+        let shifted_reply = script.steps.len() + 6;
+        for n in (1..length).step_by(509) {
+            script.fast_nor(&bytes, start + n, 509.min(length - n));
+        }
+        for n in [start, start + length - 64] {
+            script.nor(&bytes, n, 64, 60);
+        }
+        if corrupt {
+            script.steps[shifted_reply].data[16] ^= 1;
+            script.steps.truncate(shifted_reply + 1);
+        }
+        script.idle_cleanup();
+        let mut dfu = Dfu { transport: script };
+        let result = dfu.read_nor_checked(start, length, |_| Ok(()));
+        if corrupt {
+            assert!(result.is_err());
+        } else {
+            let dump = result.unwrap();
+            assert_eq!(dump.bytes, bytes[start..start + length]);
+            assert!(dump.report.cross_checked);
+            assert_eq!(dump.report.cleanup, Cleanup::Idle);
+        }
+        assert!(dfu.transport.steps.is_empty());
+    }
+    let mut dfu = Dfu {
+        transport: Script::default(),
+    };
+    for (offset, size) in [(0, 0), (NOR_SIZE - 63, 64), (usize::MAX, 64)] {
+        assert!(dfu.read_nor_checked(offset, size, |_| Ok(())).is_err());
+    }
+}
+
+#[test]
+fn restart_payload_matches_arm_assembler() {
+    // Independently assembled timer setup, Rockbox happy sequence and WDT reset.
+    assert_eq!(
+        hex(&payload::restart()),
+        concat!(
+            "d8409fe5441094e5011cc1e3441084e5101094e50118a0e12118a0e1101084e5",
+            "4c1094e52010c1e34c1084e5b0509fe5b0109fe5001085e50b10a0e3101085e5",
+            "0010e0e3081085e50310a0e3041085e594609fe594709fe594009fe5141095e5",
+            "000081e08c209fe5017027e2007086e5143095e5023083e0141095e5031051e0",
+            "fcffff4a141095e5001051e0f5ffff4a64009fe5141095e5000081e0fa20a0e3",
+            "017027e2007086e5143095e5023083e0141095e5031051e0fcffff4a141095e5",
+            "001051e0f5ffff4a0170c7e3007086e528009fe528109fe5001080e5feffffea",
+            "0000503ca000703c400400000002f03c0e060000a0860100f4010000f0490200",
+            "0000803c00001000"
+        )
+    );
+}
+
+#[test]
+fn restart_only_accepts_disconnect_errors_at_the_final_trigger() {
+    for fault in ["none", "io", "early", "access", "returned"] {
+        let mut script = Script::default();
+        script.state(2);
+        script.probe(&payload::restart(), &[0; 64]);
+        match fault {
+            "early" => {
+                script.steps[3].error = Some(rusb::Error::NoDevice);
+                script.steps.truncate(4);
+            }
+            "access" => script.steps.back_mut().unwrap().error = Some(rusb::Error::Access),
+            "none" => script.steps.back_mut().unwrap().error = Some(rusb::Error::NoDevice),
+            "io" => script.steps.back_mut().unwrap().error = Some(rusb::Error::Io),
+            _ => {}
+        }
+        let mut dfu = Dfu { transport: script };
+        assert_eq!(dfu.restart().is_ok(), matches!(fault, "none" | "io"));
+        assert!(dfu.transport.steps.is_empty());
+    }
+}
+
+#[test]
+fn restart_rejects_io_errors_before_the_final_trigger() {
+    let mut script = Script::default();
+    script.state(2);
+    script.probe(&payload::restart(), &[0; 64]);
+    for step in 0..script.steps.len() - 1 {
+        let mut script = Script::default();
+        script.state(2);
+        script.probe(&payload::restart(), &[0; 64]);
+        script.steps[step].error = Some(rusb::Error::Io);
+        script.steps.truncate(step + 1);
+        let mut dfu = Dfu { transport: script };
+        assert!(matches!(
+            dfu.restart(),
+            Err(Error::Usb {
+                source: rusb::Error::Io,
+                ..
+            })
+        ));
+        assert!(dfu.transport.steps.is_empty());
+    }
+}
