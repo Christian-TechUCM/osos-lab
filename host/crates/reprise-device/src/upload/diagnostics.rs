@@ -148,7 +148,7 @@ pub(super) fn log_attempt(
     let rc = word(raw, 12) as i32;
     let repeat_rc = word(raw, 16) as i32;
     let result = word(raw, 24);
-    if slot > 4 || !matches!(mult, 1 | 2 | 4 | 8) || result > 7 {
+    if slot > 4 || !matches!(mult, 1 | 2 | 4 | 8) || result > 9 {
         return Err(invalid("Invalid storage read attempt"));
     }
     let label = if slot == 0 {
@@ -165,6 +165,8 @@ pub(super) fn log_attempt(
         5 => "invalid FAT sector size",
         6 => "skipped: partition exceeds disk or address range",
         7 => "other partition header",
+        8 => "inner MBR candidate",
+        9 => "inner FAT32 candidate",
         _ => unreachable!(),
     };
     let matches = if rc == 0 && repeat_rc == 0 {

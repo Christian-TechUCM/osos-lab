@@ -1,0 +1,203 @@
+diff --git a/firmware/common/disk.c b/firmware/common/disk.c
+index 4a660eb705..d8d39435f1 100644
+--- a/firmware/common/disk.c
++++ b/firmware/common/disk.c
+@@ -29,6 +29,9 @@
+ #include "rb_namespace.h"
+ #include "disk.h"
+ #include "panic.h"
++#if defined(IPOD_6G) && defined(BOOTLOADER)
++#include "ipod_nested.h"
++#endif
+ 
+ #if defined(HAVE_BOOTDATA) && !defined(SIMULATOR) && !defined(BOOTLOADER)
+ #include "bootdata.h"
+@@ -389,6 +392,48 @@ bool disk_partinfo(int partition, struct partinfo *info)
+     return true;
+ }
+ 
++#if defined(IPOD_6G) && defined(BOOTLOADER)
++static int nested_read(void *context, uint32_t lba, unsigned mult,
++                       bool boot, uint8_t *out)
++{
++    int drive = *(int *)context;
++    (void)drive;
++    (void)mult;
++    (void)boot;
++    uint8_t repeat[512] __attribute__((aligned(32)));
++    if (storage_read_sectors(IF_MD(drive,) lba, 1, out) ||
++        storage_read_sectors(IF_MD(drive,) lba, 1, repeat))
++        return -1;
++    return memcmp(out, repeat, 512) ? -1 : 0;
++}
++
++static bool mount_nested(int drive, int volume, struct partinfo *pinfo,
++                         unsigned *slot)
++{
++    (void)volume;
++    struct storage_info info;
++    storage_get_info(drive, &info);
++    if (info.sector_size != 512)
++        return false;
++    uint8_t outer[512] __attribute__((aligned(32)));
++    uint8_t bpb[512] __attribute__((aligned(32)));
++    struct ipod_nested_partition p;
++    if (nested_read(&drive, 0, 1, false, outer) ||
++        !ipod_nested_find(outer, info.num_sectors, nested_read, &drive, &p, bpb) ||
++        fat_mount(IF_MV(volume,) IF_MD(drive,) p.start))
++        return false;
++    for (unsigned i = 0; i < 4; ++i) {
++        pinfo[i].start *= p.mult;
++        pinfo[i].size *= p.mult;
++    }
++    pinfo[p.slot].start = p.start;
++    pinfo[p.slot].size = p.size;
++    disk_sector_multiplier[IF_MD_DRV(drive)] = p.mult;
++    *slot = p.slot;
++    return true;
++}
++#endif
++
+ int disk_mount(int drive)
+ {
+     int mounted = 0; /* reset partition-on-drive flag */
+@@ -482,6 +527,17 @@ int disk_mount(int drive)
+ #endif /* MAX_VIRT_SECTOR_SIZE */
+         }
+ 
++#if defined(IPOD_6G) && defined(BOOTLOADER)
++        if (!mounted) {
++            unsigned slot;
++            if (mount_nested(drive, volume, pinfo, &slot)) {
++                mounted = 1;
++                init_volume(&volumes[volume], drive, slot);
++                volume_onmount_internal(IF_MV(volume));
++            }
++        }
++#endif
++
+ #if defined(MAX_VIRT_SECTOR_SIZE) && defined(MAX_PHYS_SECTOR_SIZE)
+         if (mounted)
+             ata_set_phys_sector_mult(disk_sector_multiplier[IF_MD_DRV(drive)]);
+diff --git a/firmware/include/ipod_nested.h b/firmware/include/ipod_nested.h
+new file mode 100644
+--- /dev/null
++++ b/firmware/include/ipod_nested.h
+@@ -0,0 +1,117 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++#ifndef IPOD_NESTED_H
++#define IPOD_NESTED_H
++#include <stdint.h>
++#include <stdbool.h>
++#include <string.h>
++
++struct ipod_nested_partition {
++    uint32_t start, size, mult;
++    unsigned slot;
++};
++
++/* The callback must reject failed or inconsistent repeated reads. */
++typedef int (*ipod_nested_read)(void *, uint32_t, unsigned, bool, uint8_t *);
++
++static uint32_t nested_u32(const uint8_t *p)
++{
++    return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
++}
++
++static bool nested_signature(const uint8_t *p)
++{
++    return p[510] == 0x55 && p[511] == 0xaa;
++}
++
++static bool nested_fat32(const uint8_t *v, unsigned mult, uint32_t relative,
++                         uint32_t count)
++{
++    unsigned bytes = v[11] | (unsigned)v[12] << 8;
++    unsigned cluster = v[13], reserved = v[14] | (unsigned)v[15] << 8;
++    uint32_t fat = nested_u32(v + 36), root = nested_u32(v + 44);
++    uint64_t overhead = reserved + (uint64_t)v[16] * fat;
++    if (!nested_signature(v) || bytes != mult * 512 || !cluster ||
++        (cluster & (cluster - 1)) || !reserved || !v[16] || v[16] > 2 ||
++        !fat || nested_u32(v + 28) != relative || nested_u32(v + 32) != count ||
++        overhead >= count || v[17] || v[18] || v[19] || v[20] ||
++        v[22] || v[23] || v[42] || v[43])
++        return false;
++    uint64_t clusters = (count - overhead) / cluster;
++    return clusters >= 65525 && clusters < 0x0ffffff5 &&
++           (uint64_t)fat * bytes / 4 >= clusters + 2 &&
++           root >= 2 && root < clusters + 2;
++}
++
++/* Apple USB can expose the region after the firmware partition as a disk.
++ * Accept only one FAT32 partition in that inner MBR, within the outer data
++ * region, and only if exactly one sector-unit interpretation validates. */
++static bool ipod_nested_find(const uint8_t *outer, uint64_t total,
++                             ipod_nested_read read_sector, void *context,
++                             struct ipod_nested_partition *result, uint8_t *bpb)
++{
++    if (!nested_signature(outer))
++        return false;
++    const uint8_t *fw = NULL, *data = NULL;
++    unsigned slot = 0;
++    for (unsigned i = 0; i < 4; ++i) {
++        const uint8_t *p = outer + 446 + 16 * i;
++        if (!p[4] && !nested_u32(p + 8) && !nested_u32(p + 12))
++            continue;
++        if ((p[0] != 0 && p[0] != 0x80) || !nested_u32(p + 8) || !nested_u32(p + 12))
++            return false;
++        if (p[4] == 0x3f && !fw)
++            fw = p;
++        else if ((p[4] == 0x0b || p[4] == 0x0c) && !data) {
++            data = p;
++            slot = i;
++        } else
++            return false;
++    }
++    if (!fw || !data)
++        return false;
++    uint64_t fw_end = (uint64_t)nested_u32(fw + 8) + nested_u32(fw + 12);
++    uint64_t data_end = (uint64_t)nested_u32(data + 8) + nested_u32(data + 12);
++    if (fw_end > nested_u32(data + 8))
++        return false;
++    unsigned found = 0;
++    uint8_t inner[512] __attribute__((aligned(32)));
++    uint8_t boot[512] __attribute__((aligned(32)));
++    for (unsigned mult = 1; mult <= 8; mult <<= 1) {
++        uint64_t base = fw_end * mult;
++        if (data_end * mult > total || data_end * mult > UINT32_MAX ||
++            base >= total || read_sector(context, base, mult, false, inner) ||
++            !nested_signature(inner))
++            continue;
++        const uint8_t *entry = NULL;
++        bool valid = true;
++        for (unsigned i = 0; i < 4; ++i) {
++            const uint8_t *p = inner + 446 + 16 * i;
++            if (!p[4] && !nested_u32(p + 8) && !nested_u32(p + 12))
++                continue;
++            if (entry || (p[4] != 0x0b && p[4] != 0x0c) ||
++                (p[0] != 0 && p[0] != 0x80)) {
++                valid = false;
++                break;
++            }
++            entry = p;
++        }
++        if (!valid || !entry)
++            continue;
++        uint32_t relative = nested_u32(entry + 8), count = nested_u32(entry + 12);
++        uint64_t start = base + (uint64_t)relative * mult;
++        uint64_t end = start + (uint64_t)count * mult;
++        if (!relative || !count || start < (uint64_t)nested_u32(data + 8) * mult ||
++            end > data_end * mult || read_sector(context, start, mult, true, boot) ||
++            !nested_fat32(boot, mult, relative, count))
++            continue;
++        if (++found > 1)
++            return false;
++        *result = (struct ipod_nested_partition) {
++            .start = start, .size = end - start,
++            .mult = mult, .slot = slot,
++        };
++        memcpy(bpb, boot, 512);
++    }
++    return found == 1;
++}
++#endif

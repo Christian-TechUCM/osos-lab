@@ -19,6 +19,7 @@
 #include "return_blob.h"
 #include "upload.h"
 #include "layout.h"
+#include "ipod_nested.h"
 
 extern void bss_init(void);
 
@@ -41,12 +42,14 @@ static struct layout_attempt *new_attempt(unsigned slot, unsigned mult, uint32_t
     return a;
 }
 
-static int read_layout_sector(unsigned slot, unsigned mult, uint32_t lba)
+static int read_probe_sector(unsigned slot, unsigned mult, uint32_t lba, uint8_t *out)
 {
+    if (upload_probe.count >= LAYOUT_ATTEMPTS)
+        return -202;
     struct layout_attempt *a = new_attempt(slot, mult, lba);
-    a->rc = ata_read_sectors(IF_MD(0, ) lba, 1, layout.sectors[slot]);
+    a->rc = ata_read_sectors(IF_MD(0, ) lba, 1, out);
     if (!a->rc) {
-        memcpy(a->sectors[0], layout.sectors[slot], 512);
+        memcpy(a->sectors[0], out, 512);
         a->repeat_rc = ata_read_sectors(IF_MD(0, ) lba, 1, a->sectors[1]);
     }
     int rc = a->rc ? a->rc : a->repeat_rc;
@@ -57,13 +60,19 @@ static int read_layout_sector(unsigned slot, unsigned mult, uint32_t lba)
     }
     a->result = a->rc ? PROBE_READ_FAILED : a->repeat_rc ? PROBE_REPEAT_FAILED :
                 !a->matches ? PROBE_MISMATCH : PROBE_HEADER_OK;
+    return rc;
+}
+
+static int read_layout_sector(unsigned slot, unsigned mult, uint32_t lba)
+{
+    int rc = read_probe_sector(slot, mult, lba, layout.sectors[slot]);
     layout.rc[slot] = rc;
     if (!rc)
         layout.mask |= 1u << slot;
     return rc;
 }
 
-static void read_layout(void)
+static void read_outer_layout(void)
 {
     memset(&layout, 0, sizeof(layout));
     upload_probe.count = 0;
@@ -135,6 +144,52 @@ static void read_layout(void)
         if (!read_layout_sector(i + 1, scale, start * scale))
             upload_attempts[upload_probe.count - 1].result = PROBE_PARTITION_HEADER;
     }
+}
+
+static int read_nested_sector(void *context, uint32_t lba, unsigned mult,
+                              bool boot, uint8_t *out)
+{
+    (void)context;
+    int rc = read_probe_sector(boot ? 1 : 0, mult, lba, out);
+    if (!rc)
+        upload_attempts[upload_probe.count - 1].result =
+            boot ? PROBE_NESTED_BOOT : PROBE_NESTED_MBR;
+    return rc;
+}
+
+static void layout_put32(uint8_t *out, uint32_t value)
+{
+    for (unsigned i = 0; i < 4; ++i)
+        out[i] = value >> (i * 8);
+}
+
+static void read_layout(void)
+{
+    read_outer_layout();
+    if (layout.error || layout.partition_scale)
+        return;
+    struct ipod_nested_partition p;
+    uint8_t bpb[512] __attribute__((aligned(32)));
+    uint64_t total = ((uint64_t)RECORD->sectors_high << 32) | RECORD->sectors_low;
+    if (!ipod_nested_find(layout.sectors[0], total, read_nested_sector, NULL, &p, bpb))
+        return;
+    /* Normalize the effective table in RAM; retain the raw reads in diagnostics. */
+    for (unsigned i = 0; i < 4; ++i) {
+        uint8_t *entry = layout.sectors[0] + 446 + i * 16;
+        layout_put32(entry + 8, le32(entry + 8) * p.mult);
+        layout_put32(entry + 12, le32(entry + 12) * p.mult);
+        layout.rc[i + 1] = -200;
+        layout.lba[i] = 0;
+        memset(layout.sectors[i + 1], 0, 512);
+    }
+    uint8_t *entry = layout.sectors[0] + 446 + p.slot * 16;
+    layout_put32(entry + 8, p.start);
+    layout_put32(entry + 12, p.size);
+    memcpy(layout.sectors[p.slot + 1], bpb, 512);
+    layout.rc[p.slot + 1] = 0;
+    layout.lba[p.slot] = p.start;
+    layout.mask = 1 | (1u << (p.slot + 1));
+    layout.partition_scale = 1;
 }
 
 static void save_ata_diagnostics(const struct storage_info *info)

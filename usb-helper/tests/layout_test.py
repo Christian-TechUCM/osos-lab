@@ -2,6 +2,7 @@
 """Offline partition and FAT32 boundary checks."""
 
 import ctypes
+import os
 import struct
 import subprocess
 import tempfile
@@ -16,15 +17,38 @@ class LayoutTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         root = Path(cls.tmp.name)
+        subprocess.run(
+            [
+                "git",
+                "apply",
+                "--include=firmware/include/ipod_nested.h",
+                str(HERE.parent / "patches/rockbox/0002-nested-fat32.patch"),
+            ],
+            cwd=root,
+            env=dict(os.environ, GIT_CEILING_DIRECTORIES=str(root)),
+            check=True,
+        )
         main = (HERE / "main.c").read_text()
         reader = main[
             main.index("static struct layout_attempt *new_attempt") : main.index(
                 "static void save_ata_diagnostics"
             )
         ]
+        patch = (HERE.parent / "patches/rockbox/0002-nested-fat32.patch").read_text()
+        added = "\n".join(
+            line[1:]
+            for line in patch.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        mount = added[
+            added.index("static int nested_read") : added.index(
+                "\n#endif", added.index("static int nested_read")
+            )
+        ]
         (root / "layout.c").write_text(
             """
 #include "layout.h"
+#include "ipod_nested.h"
 #include <string.h>
 static struct disk_layout layout;
 struct storage_probe upload_probe;
@@ -35,11 +59,26 @@ static struct { uint32_t sector_size, sectors_low, sectors_high; } record;
 static const uint8_t *disk_mbr, *disk_bpb;
 static uint64_t boot_lba;
 static unsigned partition_reads;
+static const uint32_t *map_lbas;
+static const uint8_t *map_sectors;
+static unsigned map_count, fault_lba;
+static int map_fault;
+static int mapped_read(uint32_t lba, void *out) {
+    ++partition_reads;
+    if (lba == fault_lba && map_fault == -1) return -1;
+    memset(out, 0, 512);
+    for (unsigned i = 0; i < map_count; ++i)
+        if (lba == map_lbas[i]) memcpy(out, map_sectors + i*512, 512);
+    if (lba == fault_lba && map_fault == -2 && !(partition_reads & 1))
+        ((uint8_t *)out)[100] ^= 1;
+    return 0;
+}
 static int read_error;
 static uint64_t accepted_start, accepted_end;
 static unsigned accepted_bytes;
 static int ata_read_sectors(uint32_t lba, unsigned count, void *out) {
     (void)count;
+    if (map_count) return mapped_read(lba, out);
     if (lba == 0) {
         memcpy(out, disk_mbr, 512);
         return 0;
@@ -60,6 +99,24 @@ static int ata_read_sectors(uint32_t lba, unsigned count, void *out) {
 """
             + reader
             + """
+#define IF_MV(a, b)
+#define IF_MD_DRV(x) 0
+struct partinfo { uint32_t start, size; unsigned type; };
+struct storage_info { unsigned sector_size; uint64_t num_sectors; };
+static unsigned disk_sector_multiplier[1];
+static uint32_t mounted_at;
+static int mount_error;
+static void storage_get_info(int drive, struct storage_info *info) {
+    (void)drive; info->sector_size = record.sector_size;
+    info->num_sectors = ((uint64_t)record.sectors_high << 32) | record.sectors_low;
+}
+static int storage_read_sectors(uint32_t lba, unsigned count, void *out) {
+    return ata_read_sectors(lba, count, out);
+}
+static int fat_mount(uint32_t start) { mounted_at = start; return mount_error; }
+"""
+            + mount
+            + """
 int read_validate(const uint8_t *mbr, const uint8_t *bpb, uint64_t capacity,
                   unsigned slot, int error, unsigned scale) {
     record.sector_size = 512;
@@ -73,6 +130,40 @@ int read_validate(const uint8_t *mbr, const uint8_t *bpb, uint64_t capacity,
     read_layout();
     return file_layout_ok(&layout, capacity, &accepted_start, &accepted_end,
                           &accepted_bytes);
+}
+int read_map(const uint32_t *lbas, const uint8_t *sectors, unsigned count,
+             uint64_t capacity, int fault, unsigned faulty_lba) {
+    map_lbas = lbas; map_sectors = sectors; map_count = count;
+    map_fault = fault; fault_lba = faulty_lba; partition_reads = 0;
+    record.sector_size = 512; record.sectors_low = capacity;
+    record.sectors_high = capacity >> 32;
+    read_layout();
+    map_count = 0;
+    return file_layout_ok(&layout, capacity, &accepted_start, &accepted_end,
+                          &accepted_bytes);
+}
+int mount_map(const uint32_t *lbas, const uint8_t *sectors, unsigned count,
+              uint64_t capacity, int error) {
+    map_lbas = lbas; map_sectors = sectors; map_count = count;
+    map_fault = 0; partition_reads = 0; mount_error = error;
+    record.sector_size = 512; record.sectors_low = capacity;
+    record.sectors_high = capacity >> 32;
+    struct partinfo pinfo[4];
+    for (unsigned i = 0; i < 4; ++i) {
+        pinfo[i].type = sectors[450 + i*16];
+        pinfo[i].start = le32(sectors + 454 + i*16);
+        pinfo[i].size = le32(sectors + 458 + i*16);
+    }
+    unsigned slot;
+    bool ok = mount_nested(0, 0, pinfo, &slot);
+    map_count = 0;
+    if (ok) {
+        accepted_start = pinfo[slot].start;
+        accepted_end = accepted_start + pinfo[slot].size;
+        accepted_bytes = disk_sector_multiplier[0] * 512;
+        if (mounted_at != accepted_start) return -1;
+    }
+    return ok;
 }
 unsigned reads(void) { return partition_reads; }
 unsigned attempts(void) { return upload_probe.count; }
@@ -106,6 +197,7 @@ unsigned rejected_partition(void) { return layout.failed_partition; }
                 "-Wextra",
                 "-Werror",
                 "-I" + str(HERE),
+                "-I" + str(root / "firmware/include"),
                 str(HERE / "layout.c"),
                 str(root / "layout.c"),
                 "-o",
@@ -125,6 +217,15 @@ unsigned rejected_partition(void) { return layout.failed_partition; }
             ctypes.c_int,
             ctypes.c_uint,
         ]
+        cls.lib.read_map.argtypes = [
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.c_char_p,
+            ctypes.c_uint,
+            ctypes.c_uint64,
+            ctypes.c_int,
+            ctypes.c_uint,
+        ]
+        cls.lib.mount_map.argtypes = cls.lib.read_map.argtypes[:-1]
         cls.lib.selected_start.restype = ctypes.c_uint64
         cls.lib.selected_end.restype = ctypes.c_uint64
 
@@ -330,3 +431,123 @@ unsigned rejected_partition(void) { return layout.failed_partition; }
         struct.pack_into("<I", mbr, 458, 16000000)
         self.assertFalse(self.valid(mbr, bpb, scale=1, capacity=16002047))
         self.assertEqual(self.lib.rejection(), 8)
+
+    def nested_image(self, mult=8):
+        outer, bpb = self.image(512 * mult)
+        struct.pack_into("<II", outer, 454, 49278, 29255927)
+        outer[466] = 0x3F
+        struct.pack_into("<II", outer, 470, 63, 49152)
+        inner = bytearray(512)
+        inner[510:] = b"\x55\xaa"
+        inner[450] = 0x0B
+        struct.pack_into("<II", inner, 454, 256, 29255680)
+        struct.pack_into("<HBHB", bpb, 11, 512 * mult, 8, 32, 2)
+        struct.pack_into("<III", bpb, 28, 256, 29255680, 30000 // mult)
+        # The captured Disk Utility geometry on MB565.
+        if mult == 8:
+            struct.pack_into("<I", bpb, 36, 3571)
+        return {0: outer, 49215 * mult: inner, 49471 * mult: bpb}
+
+    def discover_map(self, sectors, capacity=234441648, fault=0, faulty_lba=0):
+        lbas = (ctypes.c_uint32 * len(sectors))(*sectors)
+        return bool(
+            self.lib.read_map(
+                lbas,
+                b"".join(sectors.values()),
+                len(sectors),
+                capacity,
+                fault,
+                faulty_lba,
+            )
+        )
+
+    def test_mac_nested_layout_and_sector_units(self):
+        for mult in [1, 2, 4, 8]:
+            self.assertTrue(self.discover_map(self.nested_image(mult)), mult)
+            self.assertEqual(self.lib.selected_start(), 49471 * mult)
+            self.assertEqual(self.lib.selected_end(), (49471 + 29255680) * mult)
+            self.assertEqual(self.lib.selected_bytes(), 512 * mult)
+            self.assertLessEqual(self.lib.attempts(), 20)
+        captured = self.nested_image()
+        self.assertTrue(self.discover_map(captured))
+        self.assertEqual(self.lib.selected_start(), 395768)
+        self.assertEqual(self.lib.selected_end(), 234441208)
+        attempts = [self.attempt(i)[0] for i in range(self.lib.attempts())]
+        self.assertIn((0, 8, 393720, 0, 0, 1, 8, 0), attempts)
+        self.assertIn((1, 8, 395768, 0, 0, 1, 9, 0), attempts)
+
+    def test_nested_rejects_ambiguous_units_and_preserves_normal_layout(self):
+        sectors = self.nested_image(4) | self.nested_image(8)
+        self.assertFalse(self.discover_map(sectors))
+        sectors = self.nested_image()
+        _, original = self.image(4096)
+        struct.pack_into("<I", original, 32, 29255927)
+        struct.pack_into("<I", original, 36, 10000)
+        sectors[394224] = original
+        self.assertTrue(self.discover_map(sectors))
+        self.assertEqual(self.lib.selected_start(), 394224)
+
+    def test_nested_rejects_bad_tables_geometry_and_bounds(self):
+        mutations = [
+            (0, 466, b"\x83"),  # no firmware partition
+            (0, 482, b"\x83"),  # extra outer partition
+            (0, 470, struct.pack("<II", 49270, 100)),  # firmware overlap
+            (393720, 466, b"\x0c"),  # additional inner entry
+            (393720, 450, b"\xee"),  # GPT protective table
+            (393720, 454, struct.pack("<I", 0)),
+            (393720, 454, struct.pack("<I", 1)),  # before outer data
+            (393720, 458, struct.pack("<I", 0xFFFFFFFF)),
+            (393720, 510, bytes(2)),
+            (395768, 11, struct.pack("<H", 512)),
+            (395768, 28, struct.pack("<I", 255)),
+            (395768, 32, struct.pack("<I", 29255681)),
+            (395768, 36, struct.pack("<I", 1)),
+            (395768, 44, struct.pack("<I", 1)),
+            (395768, 510, bytes(2)),
+        ]
+        for lba, offset, value in mutations:
+            with self.subTest(lba=lba, offset=offset):
+                sectors = self.nested_image()
+                sectors[lba][offset : offset + len(value)] = value
+                self.assertFalse(self.discover_map(sectors))
+        self.assertFalse(self.discover_map(self.nested_image(), capacity=234441207))
+
+    def test_nested_requires_stable_reads(self):
+        for lba in [0, 393720, 395768]:
+            for fault in [-1, -2]:
+                with self.subTest(lba=lba, fault=fault):
+                    self.assertFalse(
+                        self.discover_map(
+                            self.nested_image(), fault=fault, faulty_lba=lba
+                        )
+                    )
+
+    def test_mount_and_helper_agree_on_nested_partition(self):
+        for mult in [1, 2, 4, 8]:
+            sectors = self.nested_image(mult)
+            self.assertTrue(self.discover_map(sectors))
+            helper_bounds = (
+                self.lib.selected_start(),
+                self.lib.selected_end(),
+                self.lib.selected_bytes(),
+            )
+            lbas = (ctypes.c_uint32 * len(sectors))(*sectors)
+            self.assertEqual(
+                self.lib.mount_map(
+                    lbas, b"".join(sectors.values()), len(sectors), 234441648, 0
+                ),
+                1,
+            )
+            self.assertEqual(
+                helper_bounds,
+                (
+                    self.lib.selected_start(),
+                    self.lib.selected_end(),
+                    self.lib.selected_bytes(),
+                ),
+            )
+            self.assertFalse(
+                self.lib.mount_map(
+                    lbas, b"".join(sectors.values()), len(sectors), 234441648, -1
+                )
+            )
