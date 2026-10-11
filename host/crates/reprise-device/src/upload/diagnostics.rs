@@ -84,6 +84,7 @@ pub(super) fn log_storage(raw: &[u8], log: &mut dyn FnMut(String)) -> Result<()>
         24 => "FAT32 legacy 16-bit volume size must be zero",
         25 => "FAT32 legacy 16-bit FAT size must be zero",
         26 => "unsupported FAT32 filesystem version",
+        27 => "Apple Partition Map detected; FAT32 with Master Boot Record (MBR) is required",
         _ => "unknown validation result",
     };
     log(format!(

@@ -291,6 +291,48 @@ fn layout_failure_is_preserved_and_old_zero_size_status_is_cancelled() {
 }
 
 #[test]
+fn mac_format_error_reaches_the_caller_and_preserves_diagnostics() {
+    let mut raw = status(512, COMPLETE, &[0; 32]).raw;
+    put(&mut raw, 28, (-323i32) as u32);
+    for offset in [36, 40, 44] {
+        put(&mut raw, offset, 0);
+    }
+    let mut bulk = InspectionFake {
+        raw,
+        commands: vec![],
+        save_sectors: None,
+    };
+    let error = inspect_bulk(
+        &mut bulk,
+        &[7; 16],
+        512,
+        Some(std::path::Path::new("diagnostics")),
+        &mut |_| {},
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("Apple Partition Map"), "{error}");
+    assert!(
+        error.contains("FAT32 with Master Boot Record (MBR)"),
+        "{error}"
+    );
+    assert!(error.contains("HFS/HFS+ is not supported"), "{error}");
+    assert_eq!(bulk.commands, [ACKNOWLEDGE]);
+    assert_eq!(bulk.save_sectors, Some(true));
+
+    let mut diagnostics = vec![0; diagnostics::DIAGNOSTICS_SIZE];
+    put(&mut diagnostics, 0, 0x53544731);
+    put(&mut diagnostics, 4, 1);
+    put(&mut diagnostics, 24, 27);
+    let mut logs = vec![];
+    diagnostics::log_storage(&diagnostics, &mut |s| logs.push(s)).unwrap();
+    assert!(logs
+        .last()
+        .unwrap()
+        .contains("Apple Partition Map detected"));
+}
+
+#[test]
 fn storage_inspection_keeps_logs_but_saves_sectors_only_on_failure() {
     for state in [COMPLETE, READY] {
         let mut bulk = InspectionFake {

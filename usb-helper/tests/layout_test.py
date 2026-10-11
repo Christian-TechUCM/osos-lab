@@ -551,3 +551,39 @@ unsigned rejected_partition(void) { return layout.failed_partition; }
                     lbas, b"".join(sectors.values()), len(sectors), 234441648, -1
                 )
             )
+
+    def apple_header(self, blocks=29255991, sector_bytes=4096):
+        header = bytearray(512)
+        struct.pack_into(">2sHI", header, 0, b"ER", sector_bytes, blocks)
+        return header
+
+    def test_reports_mac_format_at_raw_or_usb_visible_disk_start(self):
+        self.assertFalse(self.discover_map({0: self.apple_header()}))
+        self.assertEqual(self.lib.rejection(), 27)
+        sectors = self.nested_image()
+        sectors[393720] = self.apple_header()
+        del sectors[395768]
+        self.assertFalse(self.discover_map(sectors))
+        self.assertEqual(self.lib.rejection(), 27)
+        self.assertEqual(self.lib.rejected_partition(), 0)
+
+    def test_mac_format_requires_valid_geometry_and_stable_reads(self):
+        for header in [
+            self.apple_header(sector_bytes=0),
+            self.apple_header(sector_bytes=768),
+            self.apple_header(blocks=0),
+            self.apple_header(blocks=0xFFFFFFFF),
+        ]:
+            self.assertFalse(self.discover_map({0: header}))
+            self.assertEqual(self.lib.rejection(), 3)
+        sectors = self.nested_image()
+        sectors[393720] = self.apple_header()
+        for fault in [-1, -2]:
+            self.assertFalse(self.discover_map(sectors, fault=fault, faulty_lba=393720))
+            self.assertNotEqual(self.lib.rejection(), 27)
+
+    def test_valid_fat32_takes_precedence_over_other_mac_header_candidates(self):
+        sectors = self.nested_image()
+        sectors[49215] = self.apple_header()
+        self.assertTrue(self.discover_map(sectors))
+        self.assertEqual(self.lib.rejection(), 0)

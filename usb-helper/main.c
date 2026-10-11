@@ -72,6 +72,17 @@ static int read_layout_sector(unsigned slot, unsigned mult, uint32_t lba)
     return rc;
 }
 
+static bool apple_disk_header(const uint8_t *sector, uint32_t lba, uint64_t total)
+{
+    unsigned bytes = (unsigned)sector[2] << 8 | sector[3];
+    uint32_t blocks = (uint32_t)sector[4] << 24 | (uint32_t)sector[5] << 16 |
+                      (uint32_t)sector[6] << 8 | sector[7];
+    /* Apple Driver Descriptor Record uses big-endian fields. */
+    return sector[0] == 'E' && sector[1] == 'R' && bytes >= 512 && bytes <= 4096 &&
+           !(bytes & (bytes - 1)) && blocks > 1 &&
+           (uint64_t)lba + (uint64_t)blocks * (bytes / 512) <= total;
+}
+
 static void read_outer_layout(void)
 {
     memset(&layout, 0, sizeof(layout));
@@ -87,12 +98,16 @@ static void read_outer_layout(void)
         return;
     }
     const uint8_t *mbr = layout.sectors[0];
+    uint64_t total = ((uint64_t)RECORD->sectors_high << 32) | RECORD->sectors_low;
+    if (apple_disk_header(mbr, 0, total)) {
+        layout.error = LAYOUT_APPLE_PARTITION_MAP;
+        return;
+    }
     if (mbr[510] != 0x55 || mbr[511] != 0xaa) {
         upload_attempts[0].result = PROBE_SIGNATURE;
         layout.error = LAYOUT_MBR_SIGNATURE;
         return;
     }
-    uint64_t total = ((uint64_t)RECORD->sectors_high << 32) | RECORD->sectors_low;
     unsigned scale = 0, fat_slot = 0;
     /* Rockbox tries 512–4096-byte partition units on this target. */
     for (unsigned i = 0; i < 4 && !scale; ++i) {
@@ -171,8 +186,18 @@ static void read_layout(void)
     struct ipod_nested_partition p;
     uint8_t bpb[512] __attribute__((aligned(32)));
     uint64_t total = ((uint64_t)RECORD->sectors_high << 32) | RECORD->sectors_low;
-    if (!ipod_nested_find(layout.sectors[0], total, read_nested_sector, NULL, &p, bpb))
+    if (!ipod_nested_find(layout.sectors[0], total, read_nested_sector, NULL, &p, bpb)) {
+        for (unsigned i = 0; i < upload_probe.count; ++i) {
+            const struct layout_attempt *a = &upload_attempts[i];
+            if (a->result == PROBE_NESTED_MBR &&
+                apple_disk_header(a->sectors[0], a->lba, total)) {
+                layout.error = LAYOUT_APPLE_PARTITION_MAP;
+                layout.failed_partition = 0;
+                break;
+            }
+        }
         return;
+    }
     /* Normalize the effective table in RAM; retain the raw reads in diagnostics. */
     for (unsigned i = 0; i < 4; ++i) {
         uint8_t *entry = layout.sectors[0] + 446 + i * 16;
@@ -316,7 +341,7 @@ void main(void)
         if (!file_layout_ok(
                 &layout, ((uint64_t)RECORD->sectors_high << 32) | RECORD->sectors_low,
                 &start, &end, &bytes))
-            upload_fail(-301);
+            upload_fail(layout.error == LAYOUT_APPLE_PARTITION_MAP ? -323 : -301);
         else
             upload_prepare(start, end, bytes);
         save_diagnostics();
