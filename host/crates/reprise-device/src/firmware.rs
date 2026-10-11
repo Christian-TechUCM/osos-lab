@@ -5,6 +5,21 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, sync::OnceLock};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HardwarePolicy {
+    #[default]
+    RequireKnown,
+    /// Unknown revisions may use the Classic profile; known package exclusions still apply.
+    AllowUnknown,
+}
+
+impl HardwarePolicy {
+    pub fn permits(self, hardware: u32, compatibility: &Compatibility) -> bool {
+        compatibility.matches_hardware(hardware)
+            || (self == Self::AllowUnknown && for_hardware(hardware).is_none())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Compatibility {

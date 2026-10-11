@@ -1069,3 +1069,57 @@ fn restart_rejects_io_errors_before_the_final_trigger() {
         assert!(dfu.transport.steps.is_empty());
     }
 }
+
+#[test]
+fn hardware_override_accepts_unknown_values_without_changing_identity() {
+    use firmware::HardwarePolicy::{AllowUnknown, RequireKnown};
+    for hardware in [0u32, 0x02130000, 0x12345678, u32::MAX] {
+        let mut config = SysCfg::parse(&fixture()).unwrap();
+        config.entries.get_mut("HwVr").unwrap()[4..8].copy_from_slice(&hardware.to_le_bytes());
+        let identity = config.identity().unwrap();
+        for policy in [RequireKnown, AllowUnknown] {
+            let mut report = CheckReport::new("test", None);
+            report
+                .record_identity_with_policy(&config, policy, &mut |_| {})
+                .unwrap();
+            assert_eq!(report.compatible, policy == AllowUnknown);
+            assert_eq!(report.identity, Some(identity.clone()));
+            if policy == AllowUnknown {
+                assert!(report.checks[4].detail.contains("experimental"));
+            }
+        }
+        config.entries.remove("SrNm");
+        assert!(CheckReport::new("test", None)
+            .record_identity_with_policy(&config, AllowUnknown, &mut |_| {})
+            .is_err());
+    }
+    let mut restricted = firmware::current().compatibility.clone();
+    restricted.hardware_versions = vec![0x00130300];
+    assert!(!AllowUnknown.permits(0x00130000, &restricted));
+}
+
+#[test]
+fn hardware_override_does_not_bypass_bootrom_or_cleanup_checks() {
+    for final_state in [2, 10] {
+        let mut script = Script::default();
+        script.state(2);
+        script.rom_preflight(&vec![0; BOOTROM_SIZE]);
+        script.state(9);
+        script.command(6);
+        script.state(final_state);
+        let mut dfu = Dfu { transport: script };
+        let (report, rom) = usb::run_checks_with_policy(
+            &mut dfu,
+            info(),
+            "test",
+            firmware::HardwarePolicy::AllowUnknown,
+            |_| {},
+        );
+        assert!(!report.compatible);
+        assert!(report.identity.is_none());
+        assert!(rom.is_none());
+        assert_eq!(report.checks[3].status, CheckStatus::Failed);
+        assert_eq!(report.cleanup == Cleanup::Idle, final_state == 2);
+        assert!(dfu.transport.steps.is_empty());
+    }
+}

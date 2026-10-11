@@ -131,21 +131,45 @@ pub fn assemble_companion(
     inputs: &AppleInputs,
     syscfg: &SysCfg,
 ) -> Result<Vec<u8>> {
+    assemble_companion_with_policy(
+        bundle,
+        inputs,
+        syscfg,
+        firmware::HardwarePolicy::RequireKnown,
+    )
+}
+
+fn assemble_companion_with_policy(
+    bundle: &VerifiedBundle,
+    inputs: &AppleInputs,
+    syscfg: &SysCfg,
+    policy: firmware::HardwarePolicy,
+) -> Result<Vec<u8>> {
     let identity = syscfg.identity().map_err(|e| invalid(e.to_string()))?;
     let target = &bundle.manifest().compatibility;
-    if !target.matches_hardware(identity.hardware_version) {
+    if !policy.permits(identity.hardware_version, target) {
         return Err(invalid("SysCfg is incompatible with this companion"));
     }
     let recipe = Recipe::parse(bundle.file("companion", "recipe")?)?;
     validate_companion_inputs(&recipe)?;
     let image = recipe.apply(&inputs.0, bundle.file("companion", "data")?)?;
-    personalize_companion(image, syscfg)
+    personalize_companion_with_policy(image, syscfg, policy)
 }
 
-fn personalize_companion(mut image: Vec<u8>, syscfg: &SysCfg) -> Result<Vec<u8>> {
+fn personalize_companion(image: Vec<u8>, syscfg: &SysCfg) -> Result<Vec<u8>> {
+    personalize_companion_with_policy(image, syscfg, firmware::HardwarePolicy::RequireKnown)
+}
+
+fn personalize_companion_with_policy(
+    mut image: Vec<u8>,
+    syscfg: &SysCfg,
+    policy: firmware::HardwarePolicy,
+) -> Result<Vec<u8>> {
     let identity = syscfg.identity().map_err(|e| invalid(e.to_string()))?;
-    let profile = firmware::for_hardware(identity.hardware_version)
-        .ok_or_else(|| invalid("Unsupported Classic hardware"))?;
+    let profile = firmware::current();
+    if !policy.permits(identity.hardware_version, &profile.compatibility) {
+        return Err(invalid("Unsupported Classic hardware"));
+    }
     if image.len() != 0x2b800
         || image[SYSINFO_OFFSET..SYSINFO_OFFSET + SYSINFO_BYTES]
             .iter()
@@ -350,13 +374,27 @@ pub fn assemble(
     inputs: &AppleInputs,
     nor_backup: &[u8],
 ) -> Result<Artifacts> {
+    assemble_with_hardware_policy(
+        bundle,
+        inputs,
+        nor_backup,
+        firmware::HardwarePolicy::RequireKnown,
+    )
+}
+
+pub fn assemble_with_hardware_policy(
+    bundle: &VerifiedBundle,
+    inputs: &AppleInputs,
+    nor_backup: &[u8],
+    policy: firmware::HardwarePolicy,
+) -> Result<Artifacts> {
     if nor_backup.len() != 0x100000 {
         return Err(invalid("Expected a full 1 MiB NOR backup"));
     }
     let syscfg = SysCfg::parse(nor_backup).map_err(|e| invalid(e.to_string()))?;
     Ok(Artifacts {
         osos: assemble_osos(bundle, inputs)?,
-        companion: assemble_companion(bundle, inputs, &syscfg)?,
+        companion: assemble_companion_with_policy(bundle, inputs, &syscfg, policy)?,
         nor_installer: nor_installer(bundle)?,
     })
 }

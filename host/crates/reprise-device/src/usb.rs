@@ -377,6 +377,14 @@ impl Session {
 
     /// Check DFU, BootROM, and SysCfg, then clean up. Runs once per session.
     pub fn check(&mut self, emit: impl FnMut(Event)) -> CheckReport {
+        self.check_with_hardware_policy(crate::firmware::HardwarePolicy::RequireKnown, emit)
+    }
+
+    pub fn check_with_hardware_policy(
+        &mut self,
+        policy: crate::firmware::HardwarePolicy,
+        emit: impl FnMut(Event),
+    ) -> CheckReport {
         self.verified_rom = None;
         if self.checks_started {
             self.operation_ready = false;
@@ -394,7 +402,8 @@ impl Session {
         self.checks_started = true;
         self.dfu.transport.timeout = Duration::from_secs(2);
         let backend = self.usb_backend();
-        let (report, rom) = run_checks(&mut self.dfu, self.info.clone(), backend, emit);
+        let (report, rom) =
+            run_checks_with_policy(&mut self.dfu, self.info.clone(), backend, policy, emit);
         self.verified_rom = rom;
         self.dfu.transport.timeout = TIMEOUT;
         self.operation_ready = report.compatible && report.cleanup == Cleanup::Idle;
@@ -402,10 +411,27 @@ impl Session {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn run_checks<T: Transport>(
     dfu: &mut Dfu<T>,
     info: DeviceInfo,
     backend: &str,
+    emit: impl FnMut(Event),
+) -> (CheckReport, Option<Vec<u8>>) {
+    run_checks_with_policy(
+        dfu,
+        info,
+        backend,
+        crate::firmware::HardwarePolicy::RequireKnown,
+        emit,
+    )
+}
+
+pub(crate) fn run_checks_with_policy<T: Transport>(
+    dfu: &mut Dfu<T>,
+    info: DeviceInfo,
+    backend: &str,
+    policy: crate::firmware::HardwarePolicy,
     mut emit: impl FnMut(Event),
 ) -> (CheckReport, Option<Vec<u8>>) {
     let mut verified_rom = None;
@@ -468,7 +494,7 @@ pub(crate) fn run_checks<T: Transport>(
             &mut emit,
         );
         let config = dfu.syscfg()?;
-        report.record_identity(&config, &mut emit)
+        report.record_identity_with_policy(&config, policy, &mut emit)
     })();
     if let Err(error) = result {
         report.set(stage, CheckStatus::Failed, error.to_string(), &mut emit);

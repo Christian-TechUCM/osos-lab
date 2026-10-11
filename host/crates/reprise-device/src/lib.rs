@@ -196,8 +196,21 @@ impl CheckReport {
     }
 
     fn record_identity(&mut self, config: &SysCfg, emit: &mut impl FnMut(Event)) -> Result<()> {
+        self.record_identity_with_policy(config, firmware::HardwarePolicy::RequireKnown, emit)
+    }
+
+    fn record_identity_with_policy(
+        &mut self,
+        config: &SysCfg,
+        policy: firmware::HardwarePolicy,
+        emit: &mut impl FnMut(Event),
+    ) -> Result<()> {
         let identity = config.identity()?;
-        let model_matches = firmware::for_hardware(identity.hardware_version).is_some();
+        let known = firmware::for_hardware(identity.hardware_version).is_some();
+        let model_matches = policy.permits(
+            identity.hardware_version,
+            &firmware::current().compatibility,
+        );
         let firmware_detail = format!(
             "Original Apple firmware {}; CFW uses 2.0.5",
             identity.recorded_firmware
@@ -213,7 +226,9 @@ impl CheckReport {
                 "{}; HwVr {:#010x}{}",
                 identity.model,
                 identity.hardware_version,
-                if model_matches {
+                if model_matches && !known {
+                    " (experimental hardware override accepted)"
+                } else if model_matches {
                     " (Classic target)"
                 } else {
                     " (unsupported target)"
