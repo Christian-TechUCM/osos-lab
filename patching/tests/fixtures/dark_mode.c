@@ -16,6 +16,21 @@ static int now_playing, now_playing_available = 1, icon_notifications;
 static unsigned icon_invalidations;
 static unsigned char drawn[4];
 
+static void string_init(struct osos_string *value, const char *text)
+{
+    (void)value;
+    assert(!strcmp(text, "NowPlaying_Idle_Background"));
+}
+
+static void string_destroy(struct osos_string *value) { (void)value; }
+
+static uint32_t *resource_name_slot(const struct osos_string *value)
+{
+    static uint32_t id = 456;
+    (void)value;
+    return &id;
+}
+
 static int file_open(const struct osos_path *path, int mode, void **handle)
 {
     assert(!strcmp(path->text, "iPod_Control\\Device\\CFWDark"));
@@ -129,6 +144,9 @@ static uint32_t blend(uint32_t pixel, uint32_t background, int weight)
 #define osos_graphics_set_color text_color
 #define osos_gles_clear_color clear_color
 #define osos_rgb565_blend blend
+#define osos_string_init string_init
+#define osos_string_destroy string_destroy
+#define osos_resource_name_slot resource_name_slot
 #include "../../../payload/dark_mode.c"
 
 static int stock_actions, stock_properties, adjustments;
@@ -190,6 +208,17 @@ int main(void)
             assert(cfw_settings_action(&controller, "CFW_DarkMode_Toggle", 0));
         int dark = cycle == 1;
         assert(cfw_dark_mode_enabled() == dark);
+        const uint32_t white = 0xffffff, colored = 0xabcdef, gray = 0x808080;
+        const uint32_t *idle_color = cfw_dark_mode_color(456, &white);
+        assert(*idle_color == (dark ? 0xfffffeu : white));
+        assert(white == 0xffffff); /* The shared resource must stay unchanged. */
+        assert(cfw_dark_mode_color(999, &white) == &white);
+        assert(cfw_dark_mode_color(456, &colored) == &colored);
+        assert(cfw_dark_mode_color(456, &gray) == &gray);
+        assert(!cfw_dark_mode_color(456, NULL));
+        cfw_dark_mode_fill(&surface, &model, (const unsigned char *)idle_color,
+                           7, &controller);
+        assert(!memcmp(drawn, idle_color, 4));
         for (unsigned i = 0; i < 3; i++) {
             cfw_dark_mode_fill(&surface, &model, fills[i], 7, &controller);
             if (dark && i < 2) {

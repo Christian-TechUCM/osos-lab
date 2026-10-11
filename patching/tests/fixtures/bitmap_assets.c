@@ -17,6 +17,8 @@ static unsigned char view[0x168], context[0x48], shared_bitmap[0xb8];
 static unsigned char cache[0xd0];
 static int dark, draw_available, loads, attachments;
 static int resource_lookups;
+static int color_lookups;
+static const uint32_t stock_color = 0xffffff, mapped_color = 0xfffffe;
 static int visible = 1;
 
 static void put_pointer(void *base, unsigned offset, const void *pointer)
@@ -32,6 +34,13 @@ static void *get_pointer(void *base, unsigned offset)
 }
 
 int cfw_dark_mode_enabled(void) { return dark; }
+
+const void *cfw_dark_mode_color(uint32_t id, const void *color)
+{
+    assert(id == 456 && color == &stock_color);
+    color_lookups++;
+    return &mapped_color;
+}
 
 void cfw_bitmap_view_load_original(void *object)
 {
@@ -54,6 +63,10 @@ static void *get_resource(void *service, uint32_t type, uint32_t id)
 {
     resource_lookups++;
     (void)service;
+    if (type == 0x434f4c52) {
+        assert(id == 456);
+        return (void *)&stock_color;
+    }
     if (id == 123)
         return (void *)unlisted;
     assert(id == 0x0dad012a || id == 0x8c02);
@@ -218,6 +231,8 @@ static void check_dynamic_dark_source(void)
 
 int main(void)
 {
+    assert(cfw_bitmap_resource_get(NULL, 0x434f4c52, 456) == &mapped_color);
+    assert(color_lookups == 1);
     dark = 0;
     assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == stock);
     dark = 1;
