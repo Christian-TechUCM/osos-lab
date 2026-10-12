@@ -153,6 +153,12 @@ int main(void)
     cfw_lyrics_view_visibility(view, 0); oom = 0; artwork_enabled = 0;
     draw(); assert(!visual.background && allocs == attempts);
     artwork_enabled = 1; snap.generation++; draw(); assert(visual.background);
+    attempts = allocs;
+    WORD(art, 0xc) = 8; snap.generation++; draw();
+    assert(!visual.background && allocs == attempts); /* unsupported surface */
+    WORD(art, 0xc) = 16; RECT(art, 0x98)[3] = 1025; snap.generation++; draw();
+    assert(!visual.background && allocs == attempts); /* corrupt bounds */
+    RECT(art, 0x98)[3] = 100;
     enabled = 0; draw(); assert(!visual.owner && stock_draws == 1); /* static fallback */
     enabled = 1; BYTE(view, 0xa0) = 1; draw(); assert(!visual.owner && stock_draws == 2);
     BYTE(view, 0xa0) = 0; draw(); BYTE(view, 0xa0) = 1; tick(); assert(!visual.owner);
@@ -160,7 +166,9 @@ int main(void)
     cfw_lyrics_view_draw(unrelated, (void *)7, (void *)9); assert(stock_draws == 3);
     uint32_t other_event[] = {0, 19, 0, 0};
     assert(cfw_lyrics_view_event(view, other_event) == 23 && stock_events == 1);
-    other_event[1] = 15; assert(cfw_lyrics_view_event(unrelated, other_event) == 23);
+    other_event[1] = 15;
+    assert(cfw_lyrics_view_event(view, other_event) == 23); /* another timer */
+    assert(cfw_lyrics_view_event(unrelated, other_event) == 23);
     cfw_lyrics_view_measure(unrelated); assert(stock_measures == 1);
     cfw_lyrics_view_destroy(unrelated); assert(destroyed == 2);
     assert(frees == allocs - 1); /* one allocation deliberately failed */

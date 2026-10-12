@@ -154,9 +154,23 @@ The private library audit matched all 1,479 timed tracks across 93,953 cues;
 209 tracks had no lyrics and one mixed-format tag uses the stock fallback.
 Music and firmware inputs stay outside Git.
 
-Build validation is recorded after each native change. The previous one-line
-build is not evidence for the new drawing hooks. No hardware installation has
-been performed.
+The [firmware build for `56538c3`](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38188189959)
+passed 121 Python, 93 Rust and four JavaScript tests, lint/format checks, GCC
+9.5.0 ARM compilation and bundle packaging. One Python test was skipped and
+four Rust tests were ignored. The same suites passed locally; additional
+unsupported-artwork and unrelated-timer regressions also pass locally.
+
+The payload uses 865,988 of 983,040 reserved bytes, leaving 117,052 bytes free.
+Offline assembly against the pinned Apple input checked all 87 preimages and
+output bounds. Independent inspection confirmed the seven lyric hook pointers,
+the destructor's original-instruction trampoline and the large-font word.
+The 11,617,536-byte OSOS image has SHA-256
+`ecd28748d9febc8b9d65466172f89853a49854cc446d79811bacc33809941021`.
+The development ZIP passed archive integrity checks, SHA-256
+`fa58dfdbe4b773787f2916287d4ee3a731136599891164d8b28e36a06ed16b58`.
+Host-rendered frames of the actual C layout/blur algorithms were visually
+checked with an approximate Mac font. They are not device screenshots.
+No hardware installation was performed.
 
 Successful host tests and assembly do not establish UI lifetime, refresh latency, font fit, scrolling,
 power use or playback reliability on hardware. Any hardware trial requires a
