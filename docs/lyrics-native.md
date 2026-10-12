@@ -36,7 +36,8 @@ invalidated; a paused song clock freezes the transition. These are scheduling
 targets, not measured iPod frame rates.
 
 Artwork is sampled spatially into a 16 × 12 RGB grid, blurred with three box
-passes, darkened and expanded into a cached RGB565 bitmap. Different regions of
+passes, darkened and expanded into a cached RGB565 bitmap. Bounded ordered
+dithering reduces gradient banding on the 16-bit display. Different regions of
 the cover contribute different colors. The background covers only the lyric
 reading panel, not the full screen. It is static per track, not Apple's animated
 fluid effect. Missing or unsupported bitmaps and allocation failures use the

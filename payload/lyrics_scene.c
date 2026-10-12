@@ -167,7 +167,18 @@ int cfw_lyrics_background(void *output, size_t capacity, unsigned width, unsigne
                 unsigned bottom = rgb[by * CFW_LYRICS_SAMPLES_X + ax][c] * (256 - fx) + rgb[by * CFW_LYRICS_SAMPLES_X + bx][c] * fx;
                 color[c] = (top * (256 - fy) + bottom * fy) / 65536;
             }
-            unsigned pixel = (color[0] >> 3) << 11 | (color[1] >> 2) << 5 | color[2] >> 3;
+            /* RGB565 has few dark tones. Ordered dithering trades visible
+             * gradient bands for a bounded, one-quantization-step pattern. */
+            static const uint8_t bayer[16] = {0, 8, 2, 10, 12, 4, 14, 6,
+                                             3, 11, 1, 9, 15, 7, 13, 5};
+            unsigned noise = bayer[(y & 3) * 4 + (x & 3)];
+            unsigned r = (color[0] + noise / 2) >> 3;
+            unsigned g = (color[1] + noise / 4) >> 2;
+            unsigned b = (color[2] + noise / 2) >> 3;
+            if (r > 31) r = 31;
+            if (g > 63) g = 63;
+            if (b > 31) b = 31;
+            unsigned pixel = r << 11 | g << 5 | b;
             word(out, 28 + y * stride + x * 2, pixel, 2);
         }
     }
