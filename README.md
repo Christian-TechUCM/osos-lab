@@ -4,6 +4,16 @@ RepriseOS adds features to Apple's original iPod firmware while retaining its
 familiar interface and playback system. This repository contains the patches,
 reverse engineering, and tools used to build and package it.
 
+## Downstream project
+
+This is an independently maintained downstream of
+[lgreitis/osos-lab](https://github.com/lgreitis/osos-lab). It retains the
+upstream history and credits while pursuing its own supported feature set,
+firmware validation, and releases. We review upstream changes periodically and
+adopt compatible fixes selectively; contributors should target this
+repository's `main` branch through pull requests rather than expecting every
+change to be sent upstream.
+
 Builds use Apple **2.0.5** for all supported Classic hardware, with each device's
 own identity in its companion.
 
@@ -45,22 +55,20 @@ RepriseOS package and builds a companion using that iPod's identity.
 - EU volume limit removal for European iPods.
 - Song Info from song and Now Playing context menus.
 - Album Artists browsing with Artist fallback and configurable menu visibility.
-- Dark Mode (work in progress), with an On/Off toggle below Brightness in Settings.
+- Dark Mode, plus selectable light/dark palettes and accent colors in Settings
+  → Themes. Some native screens still need hardware visual review.
 - Sleep Timer shortcut from the Now Playing context menu (hold Center), opening
-  Apple's existing sleep-timer screen. This fork's shortcut is host-tested but
-  not independently verified on hardware.
-
-This fork has an experimental [native live-lyrics implementation](docs/lyrics-native.md):
-embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment,
-eased scrolling/highlighting, and Settings → Lyrics controls for three text
-sizes, lyric color, optional full-screen album backgrounds in both modes and
-keeping the screen awake. Settings → Themes adds separate light/dark palettes
-and accent choices while preserving the original navy theme. The full-screen
-dark backdrop and playback buttons were user-tested on an MB029; **the new
-light backdrop, selectable themes, volume-wheel candidate and scrolling
-optimizations still need a release build and hardware testing**.
-33 ms animation scheduling is not a measured device frame rate. The separate
-[Mac/browser lyrics lab](experiments/lyrics/README.md) remains a prototype.
+  Apple's existing sleep-timer screen. The shortcut is host-tested and awaits
+  independent hardware confirmation.
+- Experimental [native live lyrics](docs/lyrics-native.md): embedded timed LRC
+  lines, ±5-second timing adjustment, scrolling/highlighting, lyric text and
+  color choices, album-art or solid backgrounds, and a keep-awake option.
+- Native playback controls remain available in Live Lyrics. A clickwheel-volume
+  routing fix has passed build and host verification but still needs device
+  confirmation.
+- Separate light/dark lyric artwork backdrops and bounded theme-aware asset
+  recoloring. The [Mac/browser lyrics lab](experiments/lyrics/README.md) is a
+  prototype, not firmware.
 
 **Album Artists** groups tracks by their Album Artist tag, using Artist when that
 field is empty. Show or hide the entry through Settings → Main Menu and Settings →
