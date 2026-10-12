@@ -15,7 +15,7 @@ static unsigned u16(const unsigned char *p) { return p[0] | p[1] << 8; }
 int main(void)
 {
     struct cfw_lrc lrc;
-    struct cfw_lyrics_scene scene;
+    struct cfw_lyrics_scene scene = {0};
     const char *tag = "[00:01]One\n[00:03]Two\n[00:06]Long\n[00:10]Four\n[00:12]Five\n[00:14]Six";
     assert(cfw_lrc_parse(&lrc, tag, strlen(tag)));
     assert(cfw_lyrics_scene_layout(&scene, &lrc, -1, 304, 140, 1, measure, 0));
@@ -90,7 +90,9 @@ int main(void)
     assert(cfw_lyrics_background(pixels + 1, sizeof(pixels) - 2, 320, 240, rgb));
     assert(pixels[0] == 0xa5 && pixels[sizeof(pixels) - 1] == 0xa5);
     assert(u16(pixels + 1) == 0x565 && u16(pixels + 5) == 640);
-    assert(u16(pixels + 29) != u16(pixels + 29 + 319 * 2));
+    /* Top row fades into the theme; album colors remain below the fade. */
+    assert(u16(pixels + 29) == u16(pixels + 29 + 316 * 2));
+    assert(u16(pixels + 29 + 640 * 40) != u16(pixels + 29 + 640 * 40 + 316 * 2));
     assert(cfw_lyrics_background(pixels + 1, sizeof(pixels) - 2, 1, 1, rgb));
     assert(u16(pixels + 5) == 4 && pixels[31] == 0 && pixels[32] == 0);
     for (unsigned w = 1; w <= 320; w += 7)

@@ -26,6 +26,7 @@ class PayloadTests(unittest.TestCase):
                     root / "payload/custom_eq.ui",
                     root / "payload/sleep_timer.ui",
                     root / "payload/lyrics.ui",
+                    root / "payload/lyrics_settings.ui",
                 ],
                 directory,
                 "test",
@@ -42,6 +43,8 @@ class PayloadTests(unittest.TestCase):
                 "lyrics",
                 "lyrics_scene",
                 "lyrics_view",
+                "lyrics_settings",
+                "lyrics_power",
             ):
                 with self.subTest(fixture=name):
                     executable = directory / name

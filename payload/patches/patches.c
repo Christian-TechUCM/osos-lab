@@ -85,9 +85,11 @@ PATCH_POINTER(OSOS_NOW_PLAYING_ACTION_SLOT, OSOS_NOW_PLAYING_ACTION,
               cfw_now_playing_action);
 PATCH_POINTER(OSOS_NOW_PLAYING_SECONDARY_ACTION_SLOT, OSOS_NOW_PLAYING_ACTION,
               cfw_now_playing_action);
-/* Refresh only the stock lyric property, on the stock UI playback event. */
+/* Cache a complete lyric fallback and reset the timeline on track changes. */
 PATCH_POINTER(0x08998708, OSOS_NOW_PLAYING_PROPERTY, cfw_lyrics_property);
 PATCH_POINTER(0x089986d4, OSOS_NOW_PLAYING_MODEL_EVENT, cfw_lyrics_model_event);
+/* Only the display inactivity timer; manual shutdown and SleepService remain stock. */
+PATCH_POINTER(0x0899302c, OSOS_DISPLAY_POWER_EVENT, cfw_lyrics_power_event);
 /* Only the lyric text view: stock small Helvetica -> stock large bold font. */
 PATCH_WORD(0x0882ad3c, 0x0dad0013, 0x0dad001e);
 /* Shared TextView hooks immediately forward every non-lyric view. */

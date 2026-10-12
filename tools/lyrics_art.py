@@ -38,7 +38,7 @@ def embedded_cover(path):
 def backdrop(cover):
     """Return one opaque 320x240 RGB image. No network, animation, or device I/O.
 
-    Blur a small image before upscaling. A 70% GitHub Dark overlay bounds every
+    Blur a small image before upscaling. A 70% theme overlay bounds every
     output channel and retains several spatial colors, not a single average.
     """
     from PIL import Image, ImageFilter, ImageOps

@@ -173,6 +173,12 @@ int cfw_eq_action(const char *action, uint32_t argument)
     return !strcmp(action, "CFW_EQ_Open");
 }
 
+int cfw_lyrics_settings_action(const char *action, uint32_t argument)
+{
+    (void)argument;
+    return !strcmp(action, "CFW_LyricsSettings_Open");
+}
+
 void cfw_album_artists_menu_adjust_property(uint32_t type, uint32_t property, uintptr_t *out)
 {
     assert(type == OSOS_PROPERTY_COUNT && property == 123 && *out == 5);
@@ -197,6 +203,7 @@ int main(void)
     assert(adjustments == 1);
     assert(cfw_settings_action(&controller, "stock", 0) == 7);
     assert(cfw_settings_action(&controller, "CFW_EQ_Open", 0));
+    assert(cfw_settings_action(&controller, "CFW_LyricsSettings_Open", 0));
     assert(cfw_settings_action(&controller, "CFW_DarkMode_Toggle", OSOS_ACTION_SUPPORT_QUERY));
     assert(stock_actions == 1 && !writes && !redraws && !icon_notifications);
 
@@ -235,21 +242,21 @@ int main(void)
         }
         for (unsigned i = 0; i < 2; i++) {
             cfw_dark_mode_text_color(&surface, texts[i]);
-            assert(drawn[0] == (dark && !i ? 0xe6 : texts[i][0]));
-            assert(drawn[1] == (dark && !i ? 0xed : texts[i][1]));
-            assert(drawn[2] == (dark && !i ? 0xf3 : texts[i][2]));
+            assert(drawn[0] == (dark && !i ? 0xf2 : texts[i][0]));
+            assert(drawn[1] == (dark && !i ? 0xf7 : texts[i][1]));
+            assert(drawn[2] == (dark && !i ? 0xff : texts[i][2]));
             assert(drawn[3] == texts[i][3]);
         }
         cfw_dark_mode_clear_color(0x10000, 0x10000, 0x10000, 0x4321);
-        assert(clear_rgb[0] == (dark ? 0x0d * 0x10000 / 255 : 0x10000));
-        assert(clear_rgb[1] == (dark ? 0x11 * 0x10000 / 255 : 0x10000));
-        assert(clear_rgb[2] == (dark ? 0x17 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[0] == (dark ? 0x16 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[1] == (dark ? 0x22 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[2] == (dark ? 0x38 * 0x10000 / 255 : 0x10000));
         assert(clear_alpha == 0x4321);
         assert(cfw_dark_mode_reflection_blend(0xabcd, 0xffff, 0x8000) == 0x1234);
         assert(blend_background == (dark ? CFW_THEME_RGB565(CFW_THEME_BACKGROUND) : 0xffffu));
         cfw_dark_mode_text_color(&surface, fills[2]);
-        assert(drawn[0] == (dark ? 0x58 : 35));
-        assert(drawn[1] == (dark ? 0xa6 : 108));
+        assert(drawn[0] == (dark ? 0x39 : 35));
+        assert(drawn[1] == (dark ? 0xd0 : 108));
         assert(drawn[2] == (dark ? 0xff : 196));
         assert(drawn[3] == 91);
         const unsigned char warning[] = {248, 81, 73, 64};

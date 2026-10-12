@@ -19,7 +19,8 @@ struct cfw_lyrics_scene {
     struct cfw_lyrics_row row[CFW_LYRICS_ROWS];
 };
 typedef int (*cfw_lyrics_measure)(void *, const char *, int);
-/* No native calls/allocations. A failed layout leaves valid zero. */
+/* Zero-initialize scene before first use. No native calls/allocations.
+ * A failed layout leaves valid zero; clearing valid also resets measurements. */
 int cfw_lyrics_scene_layout(struct cfw_lyrics_scene *, const struct cfw_lrc *,
                            int cue, int width, int height, uint32_t generation,
                            cfw_lyrics_measure, void *);

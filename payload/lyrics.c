@@ -13,9 +13,9 @@ static struct {
     void *model;
     struct cfw_lrc lrc;
     char text[CFW_LRC_MAX_TEXT + 1];
-    char display[CFW_LRC_MAX_LINE + 1];
+    char display[CFW_LRC_MAX_TEXT + 1];
     size_t size;
-    int cue, delay_ms;
+    int delay_ms;
     uint32_t generation;
 } lyrics;
 
@@ -26,7 +26,6 @@ static void reset(void)
     lyrics.lrc.count = 0;
     lyrics.lrc.text = 0;
     lyrics.size = 0;
-    lyrics.cue = -1;
     lyrics.delay_ms = 0;
 }
 
@@ -39,6 +38,24 @@ static int cached(void *model, const char *text, size_t size)
 {
     if (model != lyrics.model || size != lyrics.size) return 0;
     for (size_t i = 0; i < size; i++) if (text[i] != lyrics.text[i]) return 0;
+    return 1;
+}
+
+static int plain_lyrics(void)
+{
+    size_t used = 0;
+    for (unsigned i = 0; i < lyrics.lrc.count;) {
+        if (!cfw_lrc_copy(&lyrics.lrc, i, lyrics.display + used,
+                          sizeof(lyrics.display) - used)) return 0;
+        while (lyrics.display[used]) used++;
+        unsigned stamp = lyrics.lrc.cues[i].milliseconds;
+        do { i++; } while (i < lyrics.lrc.count && lyrics.lrc.cues[i].milliseconds == stamp);
+        if (i < lyrics.lrc.count) {
+            if (used + 1 >= sizeof(lyrics.display)) return 0;
+            lyrics.display[used++] = '\n';
+        }
+    }
+    lyrics.display[used] = 0;
     return 1;
 }
 
@@ -61,18 +78,11 @@ PATCH_ARM int cfw_lyrics_property(void *model, uint32_t type, uint32_t property,
         lyrics.size = size;
         for (size_t i = 0; i <= size; i++) lyrics.text[i] = text[i];
         cfw_lrc_parse(&lyrics.lrc, lyrics.text, size);
+        /* Keep a complete readable fallback, not just the current cue. The
+         * custom view follows the playback snapshot independently. */
+        if (lyrics.lrc.count && !plain_lyrics()) lyrics.lrc.count = 0;
     }
     if (!lyrics.lrc.count) return result;
-    lyrics.cue = cfw_lrc_current(&lyrics.lrc, position(), lyrics.delay_ms);
-    if (lyrics.cue < 0) {
-        /* Wait for the first timestamp; never display the first line early. */
-        lyrics.display[0] = 0;
-    } else if (!cfw_lrc_copy(&lyrics.lrc, (unsigned)lyrics.cue, lyrics.display,
-                              sizeof(lyrics.display))) {
-        /* A simultaneous group that cannot fit falls back to Apple's text. */
-        lyrics.lrc.count = 0;
-        return result;
-    }
     *value = lyrics.display;
     return result;
 }
@@ -84,13 +94,8 @@ PATCH_ARM int cfw_lyrics_model_event(void *model, const uint32_t *event)
     /* These are the two stock current-track replacement notifications. */
     if (code == 0x80009 || code == 0x8000a) reset();
     int result = ((original_fn)OSOS_NOW_PLAYING_MODEL_EVENT)(model, event);
-    if (code == 0x80008 && model == lyrics.model && lyrics.lrc.count) {
-        int cue = cfw_lrc_current(&lyrics.lrc, position(), lyrics.delay_ms);
-        if (cue != lyrics.cue) {
-            lyrics.cue = cue;
-            osos_model_notify(model, OSOS_PROPERTY_STRING, OSOS_NOW_PLAYING_LYRICS);
-        }
-    }
+    /* The view's scoped timer drives cue changes. Avoid full native text
+     * re-layout/property notifications at every lyric boundary. */
     return result;
 }
 

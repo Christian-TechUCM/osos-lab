@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "lyrics.h"
 #include "lyrics_scene.h"
+#include "lyrics_settings.h"
+#include "dark_mode.h"
+#include "theme.h"
 #include "patch.h"
 
 /* Only the stock lyric TextView is replaced. No raw framebuffer writes: Apple's
@@ -19,7 +22,11 @@ static struct {
     uint32_t position, art_generation;
     int delay_ms, art_width, art_height;
     unsigned interval, armed, art_attempted;
+    unsigned font, dark, color, artwork;
 } visual;
+static void *reading_view;
+/* Power dispatch must never dereference a UI object during its destruction. */
+static volatile unsigned reading_awake;
 
 static int selected(void *view)
 {
@@ -30,6 +37,11 @@ static int selected(void *view)
 static int visible(void *view)
 {
     return (WORD(view, 0x48) & 0x1800) == 0x800 && !BYTE(view, 0xa0);
+}
+
+int cfw_lyrics_view_keep_awake(void)
+{
+    return reading_awake && cfw_lyrics_keep_awake();
 }
 
 static void release(void *view)
@@ -52,14 +64,16 @@ static void arm(void *view, unsigned interval)
 
 static int panel_height(void *view)
 {
-    void *parent = PTR(view, 0x34);
-    if (!parent) return 0;
-    int top = RECT(view, 0x80)[0], bottom = RECT(parent, 0x80)[2];
-    int clip_bottom = RECT(parent, 0xd0)[2];
-    if (clip_bottom > top && clip_bottom < bottom) bottom = clip_bottom;
-    /* The native lyric reading panel begins below the artwork/title header. */
-    int64_t height = (int64_t)bottom - top;
-    return height < 32 ? 0 : height > 140 ? 140 : (int)height;
+    /* This child determines its auto-sized parent's height. Reading the
+     * parent's previous bounds creates a one-line/zero-height feedback loop
+     * on first entry. Reserve the reading panel; native clipping still applies. */
+    return PTR(view, 0x34) ? 140 : 0;
+}
+
+static void size_panel(void *view, int height)
+{
+    if ((int64_t)RECT(view, 0x80)[2] - RECT(view, 0x80)[0] != height)
+        ((void (*)(void *, int))OSOS_VIEW_SET_HEIGHT)(view, height);
 }
 
 PATCH_ARM void cfw_lyrics_view_measure(void *view)
@@ -69,7 +83,7 @@ PATCH_ARM void cfw_lyrics_view_measure(void *view)
         CALL0(OSOS_TEXT_VIEW_LOAD, view);
         int height = panel_height(view);
         if (height && cfw_lyrics_snapshot(&snapshot)) {
-            ((void (*)(void *, int))OSOS_VIEW_SET_HEIGHT)(view, height);
+            size_panel(view, height);
             return;
         }
     }
@@ -128,10 +142,13 @@ static void make_background(uint32_t generation, int width, int height)
 static void draw_background(void *context, int32_t rect[4])
 {
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0);
-    static const unsigned char neutral[4] = {13, 17, 23, 255};
-    osos_graphics_set_color(context, neutral);
-    ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
-    if (!visual.background) return;
+    if (!visual.dark || !visual.artwork || !visual.background) {
+        unsigned rgb = visual.dark ? CFW_THEME_BACKGROUND : 0xffffffu;
+        unsigned char neutral[4] = {rgb >> 16, rgb >> 8, rgb, 255};
+        osos_graphics_set_color(context, neutral);
+        ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
+        return;
+    }
     /* Stack objects are aligned and destroyed before their backing BMap can
      * be freed. Bitmap_LoadResource borrows pixels, it does not own them. */
     uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
@@ -149,10 +166,19 @@ static void draw_background(void *context, int32_t rect[4])
 PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
 {
     struct cfw_lyrics_snapshot snapshot;
+    if (selected(view)) {
+        reading_view = visible(view) ? view : 0;
+        reading_awake = reading_view != 0;
+    }
     if (!selected(view) || !visible(view) || (WORD(view, 0xf0) & 0x40)) goto stock;
-    CALL0(OSOS_TEXT_VIEW_LOAD, view);
+    /* Native events invalidate the source; animation frames reuse its copied
+     * LRC instead of repeatedly scanning/loading the entire metadata tag. */
+    if (visual.owner != view || !cfw_lyrics_snapshot(&snapshot))
+        CALL0(OSOS_TEXT_VIEW_LOAD, view);
     if (!cfw_lyrics_snapshot(&snapshot)) goto stock;
-    cfw_lyrics_view_measure(view);
+    int panel = panel_height(view);
+    if (!panel) goto stock;
+    size_panel(view, panel);
     int32_t rect[4];
     ((void (*)(void *, void *))OSOS_VIEW_CONTENT_RECT)(view, rect);
     int width = rect[3] - rect[1], height = rect[2] - rect[0];
@@ -162,6 +188,14 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
         visual.owner = view;
     }
     void *context = CONTEXT(view);
+    unsigned font = cfw_lyrics_font();
+    if (!visual.scene.valid || visual.font != font || visual.scene.generation != snapshot.generation) {
+        static const uint32_t fonts[] = {0x0dad0013, 0x0dad0012, 0x0dad001e};
+        ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
+            (view, PTR(view, 0x38), fonts[font < 3 ? font : 1], 0);
+        visual.font = font;
+        visual.scene.valid = 0;
+    }
     ((void (*)(void *, void *))OSOS_VIEW_DRAW_CONTEXT)(view, context);
     int cue = cfw_lrc_current(snapshot.lrc, snapshot.position, snapshot.delay_ms);
     struct cfw_lyrics_scene *scene = &visual.scene;
@@ -173,7 +207,10 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     visual.interval = cfw_lyrics_scene_step(scene, snapshot.lrc, snapshot.position, snapshot.delay_ms);
     visual.position = snapshot.position;
     visual.delay_ms = snapshot.delay_ms;
-    make_background(snapshot.generation, width, height);
+    visual.dark = cfw_dark_mode_enabled();
+    visual.color = cfw_lyrics_color();
+    visual.artwork = cfw_lyrics_album_background();
+    if (visual.dark && visual.artwork) make_background(snapshot.generation, width, height);
     draw_background(context, rect);
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0x21);
     for (unsigned i = 0; i < scene->rows; i++) {
@@ -181,7 +218,15 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
         if (!row->text[0] || row->top >= height || row->top + row->height <= 0) continue;
         int32_t line[4] = {rect[0] + row->top, rect[1] + 12,
                           rect[0] + row->top + row->height, rect[3] - 12};
-        unsigned char color[4] = {row->brightness, row->brightness, row->brightness, 255};
+        static const unsigned light[] = {0x0969da, 0x0969da, 0x006d80, 0x7540ad, 0x805500};
+        static const unsigned dark[] = {0xf2f7ff, 0x8ac2ff, 0x80e5ff, 0xd8b7ff, 0xffdf91};
+        unsigned choice = visual.color < 5 ? visual.color : 0;
+        unsigned rgb = visual.dark ? dark[choice] : light[choice];
+        unsigned char color[4] = {rgb >> 16, rgb >> 8, rgb, 255};
+        for (unsigned c = 0; c < 3; c++) {
+            if (visual.dark) color[c] = color[c] * row->brightness / 250;
+            else color[c] += (255 - color[c]) * (250 - row->brightness) / 180;
+        }
         osos_graphics_set_color(context, color);
         ((void (*)(void *, const char *, const void *, unsigned, int, int, int))OSOS_GRAPHICS_DRAW_WRAPPED)
             (context, row->text, line, BYTE(view, 0xe9), 0, 0, 0);
@@ -200,7 +245,11 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
         event[2] == (uint32_t)(uintptr_t)TIMER(view)) {
         if (visual.owner != view) return 1; /* stale event: do not start stock blinking */
         visual.armed = 0;
-        if (!visible(view)) { release(view); return 1; }
+        if (!visible(view)) {
+            if (reading_view == view) { reading_awake = 0; reading_view = 0; }
+            release(view);
+            return 1;
+        }
         struct cfw_lyrics_snapshot snapshot;
         unsigned interval = 100;
         int changed = 1;
@@ -223,11 +272,15 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
         arm(view, interval);
         return 1;
     }
-    return ((int (*)(void *, const void *))OSOS_TEXT_VIEW_EVENT)(view, event);
+    int result = ((int (*)(void *, const void *))OSOS_TEXT_VIEW_EVENT)(view, event);
+    /* Let the native property handler refresh before the next draw. */
+    if (visual.owner == view && event[1] != 15) CALL0(OSOS_TEXT_VIEW_LOAD, view);
+    return result;
 }
 
 PATCH_ARM void cfw_lyrics_view_visibility(void *view, unsigned shown)
 {
+    if (reading_view == view) { reading_awake = 0; reading_view = 0; }
     release(view);
     ((void (*)(void *, unsigned))OSOS_TEXT_VIEW_VISIBILITY)(view, shown);
 }
@@ -235,6 +288,7 @@ PATCH_ARM void cfw_lyrics_view_visibility(void *view, unsigned shown)
 void *cfw_lyrics_view_destroy_original(void *view);
 PATCH_ARM void *cfw_lyrics_view_destroy(void *view)
 {
+    if (reading_view == view) { reading_awake = 0; reading_view = 0; }
     release(view);
     return cfw_lyrics_view_destroy_original(view);
 }

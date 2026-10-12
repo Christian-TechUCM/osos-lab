@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "lyrics_scene.h"
+#include "theme.h"
 
 static int next(const struct cfw_lrc *lrc, int cue)
 {
@@ -21,6 +22,16 @@ int cfw_lyrics_scene_layout(struct cfw_lyrics_scene *scene, const struct cfw_lrc
                             int cue, int width, int height, uint32_t generation,
                             cfw_lyrics_measure measure, void *context)
 {
+    /* Adjacent cue windows overlap. Reuse wrapping measurements, but never
+     * across a tag, width, or font change (font changes clear valid). */
+    int old_cues[CFW_LYRICS_ROWS], old_heights[CFW_LYRICS_ROWS];
+    unsigned old_rows = scene->valid && scene->generation == generation &&
+                        scene->width == width ? scene->rows : 0;
+    if (old_rows > CFW_LYRICS_ROWS) old_rows = 0;
+    for (unsigned n = 0; n < old_rows; n++) {
+        old_cues[n] = scene->row[n].cue;
+        old_heights[n] = scene->row[n].height;
+    }
     scene->valid = 0;
     scene->rows = 0;
     if (!lrc || !lrc->count || !measure || width < 48 || width > 320 ||
@@ -42,7 +53,11 @@ int cfw_lyrics_scene_layout(struct cfw_lyrics_scene *scene, const struct cfw_lrc
         struct cfw_lyrics_row *row = &scene->row[scene->rows++];
         row->cue = i;
         if (!cfw_lrc_copy(lrc, (unsigned)i, row->text, sizeof(row->text))) return 0;
-        row->height = row->text[0] ? measure(context, row->text, width - 24) : 24;
+        row->height = 0;
+        for (unsigned n = 0; n < old_rows; n++)
+            if (old_cues[n] == i) row->height = old_heights[n];
+        if (!row->height)
+            row->height = row->text[0] ? measure(context, row->text, width - 24) : 24;
         if (row->height < 1 || row->height > 4096) return 0;
     }
     scene->valid = 1;
@@ -133,7 +148,8 @@ void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])
             for (unsigned c = 0; c < 3; c++) rgb[i][c] = temp[i][c];
     }
     /* Dark enough for muted neighboring lines as well as the highlighted line. */
-    static const unsigned neutral[3] = {13, 17, 23};
+    static const unsigned neutral[3] = {CFW_THEME_BACKGROUND >> 16,
+        (CFW_THEME_BACKGROUND >> 8) & 255, CFW_THEME_BACKGROUND & 255};
     for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
         for (unsigned c = 0; c < 3; c++) rgb[i][c] = (rgb[i][c] * 30 + neutral[c] * 70) / 100;
 }
@@ -166,6 +182,11 @@ int cfw_lyrics_background(void *output, size_t capacity, unsigned width, unsigne
                 unsigned top = rgb[ay * CFW_LYRICS_SAMPLES_X + ax][c] * (256 - fx) + rgb[ay * CFW_LYRICS_SAMPLES_X + bx][c] * fx;
                 unsigned bottom = rgb[by * CFW_LYRICS_SAMPLES_X + ax][c] * (256 - fx) + rgb[by * CFW_LYRICS_SAMPLES_X + bx][c] * fx;
                 color[c] = (top * (256 - fy) + bottom * fy) / 65536;
+                /* Fade the first 28 pixels into the surrounding dark surface.
+                 * Done once in the cached bitmap, never in animation frames. */
+                unsigned base = (CFW_THEME_BACKGROUND >> ((2 - c) * 8)) & 255;
+                unsigned fade = y < 28 ? y : 28;
+                color[c] = (color[c] * fade + base * (28 - fade)) / 28;
             }
             /* RGB565 has few dark tones. Ordered dithering trades visible
              * gradient bands for a bounded, one-quantization-step pattern. */

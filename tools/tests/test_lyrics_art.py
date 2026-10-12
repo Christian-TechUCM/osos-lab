@@ -26,12 +26,15 @@ class ArtworkTests(unittest.TestCase):
         left, right = image.getpixel((10, 120)), image.getpixel((310, 120))
         self.assertGreater(left[0], left[2])
         self.assertGreater(right[2], right[0])
-        for low, high in image.getextrema():
+        for channel, (low, high) in enumerate(image.getextrema()):
             self.assertGreaterEqual(low, 0)
-            self.assertLessEqual(high, 93)
+            self.assertLessEqual(
+                high,
+                int(255 * 0.30 + lyrics_art.COLORS["background"][channel] * 0.70) + 1,
+            )
 
     def test_missing_and_transparent_art_use_theme_background(self):
-        expected = (13, 17, 23)
+        expected = lyrics_art.COLORS["background"]
         self.assertEqual(lyrics_art.backdrop(None).getpixel((0, 0)), expected)
         transparent = Image.new("RGBA", (10, 10), (255, 0, 0, 0))
         self.assertEqual(

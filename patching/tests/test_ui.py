@@ -40,6 +40,28 @@ def menu(rows):
 
 
 class UiTests(unittest.TestCase):
+    def test_lyrics_settings_coexist_with_dark_mode_and_preserve_stock(self):
+        root = Path(__file__).resolve().parents[2]
+        metadata = json.loads((root / "firmware/ui.json").read_text())
+        bindings = json.loads((root / "payload/native/ui.json").read_text())["bindings"]
+        resources = Resources(metadata["resources"], bindings)
+        for feature in ("lyrics_settings", "dark_mode"):
+            compile_document(resources, parser.read(root / f"payload/{feature}.ui"))
+        stock = blocks(resources.stock("ITEM", "SettingsMenu_Items"))
+        rows = blocks(resources.added["ITEM", bindings["SettingsMenu_Items"]])
+        self.assertEqual(len(rows), len(stock) + 2)
+        for _, original in stock:
+            matches = [
+                row
+                for _, row in rows
+                if row.data == original.data and row.origins == original.origins
+            ]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].data, original.data)
+        events = resources.added["CEVT", bindings["SettingsMenus_Main_Screen"]]
+        self.assertIn(b"CFW_LyricsSettings_Open", events.data)
+        self.assertIn(b"CFW_DarkMode_Toggle", events.data)
+
     def test_lyrics_and_sleep_timer_preserve_all_now_playing_layouts(self):
         root = Path(__file__).resolve().parents[2]
         metadata = json.loads((root / "firmware/ui.json").read_text())

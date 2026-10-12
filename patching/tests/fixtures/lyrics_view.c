@@ -15,6 +15,19 @@ static int stock_draws, stock_events, stock_measures, stock_shown, destroyed, in
 static int text_draws, blits, fills, loaded;
 static unsigned interval;
 static void *timer_owner;
+static unsigned setting_font = 1, setting_color, setting_art = 1, setting_awake = 1;
+static int dark = 1, font_sets, measurements;
+unsigned cfw_lyrics_font(void) { return setting_font; }
+unsigned cfw_lyrics_color(void) { return setting_color; }
+unsigned cfw_lyrics_album_background(void) { return setting_art; }
+unsigned cfw_lyrics_keep_awake(void) { return setting_awake; }
+int cfw_dark_mode_enabled(void) { return dark; }
+static void set_font(void *p, void *service, uint32_t font, int invalid) {
+    /* 64-bit host fields overlap native four-byte slots; service is opaque. */
+    (void)service;
+    assert(p == view && !invalid);
+    assert(font == 0x0dad0013 || font == 0x0dad0012 || font == 0x0dad001e); font_sets++;
+}
 static struct cfw_lyrics_snapshot snap;
 int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out) { *out = snap; return enabled; }
 void *cfw_lyrics_artwork(void) { return artwork_enabled ? art : 0; }
@@ -32,7 +45,7 @@ static void deallocate(void *p) { assert(p); frees++; free(p); }
 static void set_height(void *p, int h) { assert(p == view && h <= 140); ((int32_t *)(view + 0x80))[2] = 100 + h; }
 static void content_rect(void *p, void *out) { assert(p == view); int32_t r[] = {0, 0, 140, 304}; memcpy(out, r, sizeof(r)); }
 static void draw_context(void *p, void *c) { assert(p == view && c == view + 0xa4); }
-static int wrapped_height(void *c, const char *s, int w, int spacing) { assert(c == view + 0xa4 && s && w == 280 && !spacing); return 24; }
+static int wrapped_height(void *c, const char *s, int w, int spacing) { assert(c == view + 0xa4 && s && w == 280 && !spacing); measurements++; return 24; }
 static void read_pixel(void *surface, int x, int y, void *out) {
     assert(surface == art + 4 && x >= 0 && x < 100 && y >= 0 && y < 100);
     unsigned char c[] = {(unsigned char)(x * 2), (unsigned char)(y * 2), 80, 255};
@@ -56,6 +69,7 @@ static void text(void *c, const char *s, const void *rect, unsigned align, int s
 static void invalidate(void *p, const void *rect) { assert(p == view && rect == view + 0x80); invalidations++; }
 
 #undef OSOS_TEXT_VIEW_LOAD
+#undef OSOS_TEXT_VIEW_SET_FONT
 #undef OSOS_TEXT_VIEW_DRAW
 #undef OSOS_TEXT_VIEW_EVENT
 #undef OSOS_TEXT_VIEW_VISIBILITY
@@ -80,6 +94,7 @@ static void invalidate(void *p, const void *rect) { assert(p == view && rect == 
 #undef OSOS_BITMAP_CONSTRUCT
 #undef OSOS_BITMAP_DESTROY
 #define OSOS_TEXT_VIEW_LOAD native_load
+#define OSOS_TEXT_VIEW_SET_FONT set_font
 #define OSOS_TEXT_VIEW_DRAW native_draw
 #define OSOS_TEXT_VIEW_EVENT native_event
 #define OSOS_TEXT_VIEW_VISIBILITY native_visibility
@@ -130,12 +145,17 @@ int main(void)
     /* A host pointer at bitmap+4 overlaps stride+8: only non-null is tested. */
     timer_owner = TIMER(view);
     draw();
+    assert(cfw_lyrics_view_keep_awake());
+    setting_awake = 0; assert(!cfw_lyrics_view_keep_awake()); setting_awake = 1;
     assert(visual.owner == view && visual.background && allocs == 1 && samples == 192);
-    assert(blits == 1 && fills == 1 && text_draws && starts == 1 && interval == 100);
+    assert(blits == 1 && fills == 0 && text_draws && starts == 1 && interval == 100);
+    int first_loads = loaded, first_measures = measurements;
     draw(); assert(allocs == 1 && samples == 192 && starts == 1); /* cached, timer not postponed */
+    assert(loaded == first_loads && measurements == first_measures && font_sets == 1);
     tick(); assert(!invalidations && interval == 100); /* pause: no redraw */
     snap.position = 2400; tick(); assert(!invalidations); /* steady cue: no redraw */
     snap.position = 3000; tick(); assert(invalidations == 1); draw();
+    assert(measurements == first_measures); /* overlapping rows reused */
     snap.position = 3100; tick(); assert(invalidations == 2 && interval == 33); draw();
     tick(); assert(invalidations == 2 && interval == 100); /* pause mid-transition */
     snap.position = 1000; tick(); assert(invalidations == 3); draw(); /* backward seek */
@@ -143,10 +163,12 @@ int main(void)
     snap.generation++; tick(); draw(); assert(allocs == 2 && frees == 1 && samples == 384);
     int stopped = stops;
     cfw_lyrics_view_visibility(view, 0);
+    assert(!cfw_lyrics_view_keep_awake());
     assert(!visual.owner && !visual.background && frees == 2 && stops == stopped + 1);
     int started = starts; tick(); assert(starts == started); /* stale event consumed */
     cfw_lyrics_view_visibility(view, 1); draw(); assert(visual.owner == view);
     assert(cfw_lyrics_view_destroy(view) == view && !visual.owner && !visual.background);
+    assert(!cfw_lyrics_view_keep_awake());
     started = starts; tick(); assert(starts == started);
     oom = 1; draw(); assert(visual.owner == view && !visual.background);
     int attempts = allocs; draw(); assert(allocs == attempts); /* no OOM retry storm */
@@ -159,8 +181,21 @@ int main(void)
     WORD(art, 0xc) = 16; RECT(art, 0x98)[3] = 1025; snap.generation++; draw();
     assert(!visual.background && allocs == attempts); /* corrupt bounds */
     RECT(art, 0x98)[3] = 100;
+    /* Appearance changes do not sample artwork in light mode. */
+    dark = 0; snap.generation++; attempts = samples; int old_blits = blits;
+    draw(); assert(samples == attempts && blits == old_blits && fills);
+    setting_color = 3; setting_font = 2; draw(); assert(visual.font == 2 && visual.color == 3);
+    setting_art = 0; dark = 1; draw(); assert(samples == attempts && blits == old_blits);
+    setting_art = 1; draw(); assert(samples > attempts && blits > old_blits);
+    /* First layout may have an empty or one-line auto-sized parent. */
+    RECT(parent, 0x80)[2] = RECT(parent, 0xd0)[2] = 0;
+    cfw_lyrics_view_measure(view); assert(RECT(view, 0x80)[2] == 240 && !stock_measures);
+    RECT(parent, 0x80)[2] = RECT(parent, 0xd0)[2] = 124;
+    cfw_lyrics_view_measure(view); assert(RECT(view, 0x80)[2] == 240 && !stock_measures);
     enabled = 0; draw(); assert(!visual.owner && stock_draws == 1); /* static fallback */
+    assert(cfw_lyrics_view_keep_awake()); /* ordinary untimed lyrics also stay awake */
     enabled = 1; BYTE(view, 0xa0) = 1; draw(); assert(!visual.owner && stock_draws == 2);
+    assert(!cfw_lyrics_view_keep_awake());
     BYTE(view, 0xa0) = 0; draw(); BYTE(view, 0xa0) = 1; tick(); assert(!visual.owner);
     BYTE(view, 0xa0) = 0;
     cfw_lyrics_view_draw(unrelated, (void *)7, (void *)9); assert(stock_draws == 3);

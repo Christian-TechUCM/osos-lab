@@ -6,17 +6,17 @@ from patching.theme import COLORS, map_pixels
 
 class ThemeTests(unittest.TestCase):
     def test_shared_palette_and_surface_roles(self):
-        self.assertEqual(COLORS["background"], (13, 17, 23))
-        self.assertEqual(COLORS["ink"], (230, 237, 243))
-        self.assertEqual(COLORS["accent"], (88, 166, 255))
+        self.assertEqual(COLORS["background"], (22, 34, 56))
+        self.assertEqual(COLORS["ink"], (242, 247, 255))
+        self.assertEqual(COLORS["accent"], (57, 208, 255))
         source = bytes((30, 30, 30, 255, 20, 20, 20, 127))
         self.assertEqual(
             map_pixels(source, "dark/background-dark-image.png"),
-            bytes((13, 17, 23, 255, 13, 17, 23, 127)),
+            bytes((22, 34, 56, 255, 22, 34, 56, 127)),
         )
         self.assertEqual(
             map_pixels(source[:4], "dark/status-bar-background.png"),
-            bytes((9, 12, 16, 255)),
+            bytes((11, 18, 32, 255)),
         )
 
     def test_neutral_tones_accent_alpha_and_semantic_colors(self):
@@ -45,7 +45,7 @@ class ThemeTests(unittest.TestCase):
             )
         )
         mapped = map_pixels(pixels, "icon.png")
-        self.assertEqual(mapped[:8], bytes((230, 237, 243, 89, 88, 166, 255, 123)))
+        self.assertEqual(mapped[:8], bytes((242, 247, 255, 89, 57, 208, 255, 123)))
         self.assertEqual(mapped[8:], pixels[8:])
         with self.assertRaises(ValueError):
             map_pixels(b"bad", "icon.png")

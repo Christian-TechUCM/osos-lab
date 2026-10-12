@@ -77,27 +77,27 @@ static void action(const char *name) { assert(cfw_lyrics_action(&controller, nam
 int main(void)
 {
     tag = "[00:01.00]First line\n[00:02.50]Second line\n[00:03.00]";
-    now = 0; assert(!strcmp(read_line(), ""));
-    now = 1000; assert(!strcmp(read_line(), "First line"));
+    now = 0; assert(!strcmp(read_line(), "First line\nSecond line\n"));
+    now = 1000; assert(!strcmp(read_line(), "First line\nSecond line\n"));
     struct cfw_lyrics_snapshot snapshot;
     assert(cfw_lyrics_snapshot(&snapshot));
     assert(snapshot.position == now && snapshot.lrc == &lyrics.lrc && !snapshot.delay_ms);
     uint32_t first_generation = snapshot.generation;
     event(&model, 0x80008); assert(notifications == 0); /* pause */
-    now = 2500; event(&model, 0x80008); assert(notifications == 1);
-    assert(!strcmp(read_line(), "Second line"));
-    now = 1000; event(&model, 0x80008); assert(notifications == 2); /* backwards seek */
-    assert(!strcmp(read_line(), "First line"));
-    event(&other_model, 0x80008); event(&model, 123); assert(notifications == 2);
-    now = 3000; assert(!strcmp(read_line(), "")); /* instrumental */
+    now = 2500; event(&model, 0x80008); assert(notifications == 0);
+    assert(!strcmp(read_line(), "First line\nSecond line\n"));
+    now = 1000; event(&model, 0x80008); assert(notifications == 0); /* view owns timing */
+    assert(!strcmp(read_line(), "First line\nSecond line\n"));
+    event(&other_model, 0x80008); event(&model, 123); assert(notifications == 0);
+    now = 3000; assert(!strcmp(read_line(), "First line\nSecond line\n"));
     assert(!cfw_lyrics_action(&controller, "Other", 0));
     assert(!cfw_lyrics_action(&controller, 0, 0));
     assert(cfw_lyrics_action(&controller, "CFW_Lyrics", OSOS_ACTION_SUPPORT_QUERY));
     assert(prepares == 0 && shows == 0);
     action("CFW_Lyrics"); assert(prepares == 1 && shows == 1);
     action("CFW_LyricsLater"); assert(lyrics.delay_ms == 100);
-    now = 1000; assert(!strcmp(read_line(), ""));
-    now = 1100; assert(!strcmp(read_line(), "First line"));
+    now = 1000; assert(!strcmp(read_line(), "First line\nSecond line\n"));
+    now = 1100; assert(!strcmp(read_line(), "First line\nSecond line\n"));
     for (unsigned i = 0; i < 100; i++) action("CFW_LyricsLater");
     assert(lyrics.delay_ms == 5000);
     for (unsigned i = 0; i < 110; i++) action("CFW_LyricsEarlier");
@@ -121,7 +121,7 @@ int main(void)
     assert(unrelated == tag);
     action("CFW_LyricsLater");
     event(&model, 0x8000a); assert(!lyrics.model && !lyrics.delay_ms);
-    tag = "[00:01]New text!!!"; now = 0; assert(!strcmp(read_line(), ""));
+    tag = "[00:01]New text!!!"; now = 0; assert(!strcmp(read_line(), "New text!!!"));
     now = 1000;
     tag = 0; assert(read_line() == 0 && !lyrics.lrc.count);
     tag = "[00:01]Again"; assert(!strcmp(read_line(), "Again"));

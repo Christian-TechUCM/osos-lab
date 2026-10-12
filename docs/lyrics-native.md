@@ -4,7 +4,10 @@ This fork implements an experimental line-timed lyric view in the Apple 2.0.5
 payload, including eased scrolling and a multicolor blurred album background.
 It uses the embedded lyric text already loaded by Apple's player and
 the existing Now Playing Extra Info screen. This is native firmware code, not
-the browser preview, but it has not been installed or verified on an iPod.
+the browser preview. The user installed the previous `56538c3` build on their
+MB029 and reported working playback/lyrics. Their hardware photos exposed
+layout, contrast, screen-idle and scrolling issues. The refinements below are
+host-tested changes, **not yet installed or verified on the iPod**.
 
 ## Controls and limitations
 
@@ -21,9 +24,11 @@ to ±5 seconds, applies only to the display, and resets on track replacement.
 It is not saved to disk. Seek and pause behavior follow the player position,
 not elapsed wall time.
 
-The lyric body uses Apple's existing large bold font instead of the small
-Now Playing font. This is one fixed larger size, not the preview's three-size
-selector. Apple's font renderer handles wrapping and character support; the
+Settings → Lyrics offers Small / Medium / Large text, Automatic / Blue / Cyan /
+Purple / Gold lyric color, Album background (dark), and Keep screen awake.
+Defaults are Medium, Automatic, On, On. Automatic means blue on white in light
+mode and near-white on album color in dark mode. The other colors use separate
+light/dark variants for contrast. Apple's font renderer handles wrapping and character support; the
 lyric renderer positions up to five cue groups inside the existing reading
 panel. Header, album thumbnail, navigation and playback controls remain native.
 
@@ -33,7 +38,15 @@ taller than the panel pans during its available time (a six-second display
 window for the last cue, which has no following timestamp). The view's existing timer
 polls at 33 ms while moving and 100 ms otherwise. Unchanged frames are not
 invalidated; a paused song clock freezes the transition. These are scheduling
-targets, not measured iPod frame rates.
+targets, not measured iPod frame rates. Animation frames reuse the copied tag;
+cue changes reuse overlapping row measurements and no longer trigger native
+full-text property relayout. An opaque background blit skips the redundant fill.
+
+The reading panel reserves 140 pixels independently of its auto-sized parent's
+initial bounds. This removes a one-line/empty-parent measurement feedback loop.
+If custom drawing cannot run, timed tags now provide a complete, timestamp-free
+plain-text fallback rather than only the current cue. Actual LOKERA behavior
+must still be rechecked on hardware; the photos alone cannot prove the cause.
 
 Artwork is sampled spatially into a 16 × 12 RGB grid, blurred with three box
 passes, darkened and expanded into a cached RGB565 bitmap. Bounded ordered
@@ -41,11 +54,30 @@ dithering reduces gradient banding on the 16-bit display. Different regions of
 the cover contribute different colors. The background covers only the lyric
 reading panel, not the full screen. It is static per track, not Apple's animated
 fluid effect. Missing or unsupported bitmaps and allocation failures use the
-GitHub Dark base color; Apple's placeholder can be sampled when the model
+theme's navy base color; Apple's placeholder can be sampled when the model
 supplies it instead of a cover. No host-generated image or sidecar is needed.
 
-Selectable font sizes and word-level karaoke are not implemented in firmware.
-The existing GitHub Dark palette and Sleep Timer remain independent features.
+Light mode uses a white reading panel with no album bitmap. Dark mode blends
+the first 28 pixels of the cached album bitmap into the surrounding navy,
+removing the hard horizontal edge without per-frame blend work.
+
+The dark palette adapts [Afterburner](https://www.dexthemes.com/afterburner/dark):
+its lighter navigation navy `#162238` is the main background, `#0B1220` the
+sidebar, `#F2F7FF` the ink and `#39D0FF` the accent. Selection `#244058` and
+border `#354762` are adaptations, not exact copies. Word-level karaoke remains
+unsupported; Sleep Timer is independent.
+
+Keep screen awake postpones only the lit-display inactivity timer while a
+lyric TextView is visible (including ordinary-text fallback). It does not wake
+a sleeping display, change the global Backlight preference, intercept input,
+or change SleepService/Sleep Timer. Hide/destruction clears the view reference.
+Normal inactivity behavior resumes on the next configured timeout after leaving
+lyrics. Keeping the light on consumes more battery; the setting can be disabled.
+
+Preferences use a versioned, checksummed 28-byte `iPod_Control/Device/CFWLyrics`
+record. Bad/short records load defaults; failed writes retain the current RAM
+choice and show “Save failed - retry.” No preferences are written by playback
+or animation callbacks.
 
 ## Verified firmware bindings
 
@@ -63,6 +95,16 @@ data. Names describe the observed behavior; they are not an Apple API contract.
 | `0x081ef374` | Checks availability of lyrics or other extra information. |
 | `0x081ef9a8` | Prepares the stock extra-info state before the layout transition. |
 | `0x08214610` | Chooses the ready/loading Extra Info layout on the Now Playing controller. |
+| `0x082879e8` | TextView font setter `(view, resourceService, fontID, invalidate)`: resolves a Type resource, stores it at `+0xfc`, applies the font to `+0xa4`. Small/medium/large IDs are `0x0dad0013`, `0x0dad0012`, `0x0dad001e`. |
+| `0x0819cb2c` / slot `0x0899302c` | Display power event handler: event 15 with timer `controller+0x6c` dispatches inactivity event 0; timer `+0x98` dispatches later state event 14. The hook only postpones `+0x6c` while the lit-state byte `+0x68` is set and the lyric view requests it. |
+
+Power binding evidence: `0x0819b44c` and `0x0819bdcc` set lit state `+0x68`,
+select `+0x6c` intervals from the native Backlight setting (`0x6032..0x603c`),
+and enable the display. Idle-clock entry `0x0819bf68` and dark entry
+`0x0819af1c` clear `+0x68`; the clock controller is created by the former.
+Only the event-handler vtable slot is replaced, with its original word checked.
+The unrelated SleepService timer at `service+0x60` is untouched. Hardware
+acceptance must explicitly test idle timeout, manual shutdown and Sleep Timer.
 
 The readiness helper at `0x081ed8b8` checks the stock lyric-fetch success flag,
 not the replacement string's length. Returning an empty current line does not
@@ -123,14 +165,18 @@ These limits are intentionally stricter than the host sidecar format.
 The property hook first calls the original getter. It copies changed lyric
 text instead of retaining Apple's temporary string; its model pointer is used
 only for identity comparison. On a track event, it resets before forwarding the
-event. Every stock event is forwarded. A position event notifies just the lyric
-property, and only when the active cue changes. The view adapter independently
+event. Every stock model event is forwarded. The complete fallback string is
+stable between track changes; position events no longer notify that property.
+The view adapter independently
 reads the same timeline and player clock on the UI thread. It reuses the
 TextView's initialized timer, and stops it on hide, destruction or fallback.
-No new timer object, audio callback, filesystem write, sidecar path, or
-title-based track mapping is added.
+No new timer object, audio callback, sidecar path, or title-based track mapping
+is added. Only explicit lyric Settings actions write the preference file.
 
-Five bounded text buffers hold the neighboring groups. One cached background
+Five bounded text buffers hold the neighboring groups; a separate 32-KiB
+buffer holds the complete plain fallback. If repeated timestamps expand beyond
+that bound, the original Apple text is preserved instead of truncating it.
+One cached background
 allocation is bounded to 153,628 bytes (the full 320 × 240 limit; the current
 panel is at most 140 pixels tall). Allocation is attempted once per track/size,
 not every frame. It is freed on track/size replacement, hide, destruction or
@@ -170,7 +216,8 @@ The development ZIP passed archive integrity checks, SHA-256
 `fa58dfdbe4b773787f2916287d4ee3a731136599891164d8b28e36a06ed16b58`.
 Host-rendered frames of the actual C layout/blur algorithms were visually
 checked with an approximate Mac font. They are not device screenshots.
-No hardware installation was performed.
+Those checks describe the previous baseline build, subsequently installed by
+the user. They do not certify the new refinement build or its hardware behavior.
 
 Successful host tests and assembly do not establish UI lifetime, refresh latency, font fit, scrolling,
 power use or playback reliability on hardware. Any hardware trial requires a
