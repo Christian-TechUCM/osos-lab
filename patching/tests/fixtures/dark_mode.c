@@ -5,6 +5,8 @@
 #define _Static_assert(...)
 #include "../../../payload/osos.h"
 #include "../../../payload/dark_mode.h"
+#include "../../../payload/themes.h"
+#include "../../../payload/theme.h"
 #undef _Static_assert
 #define CFW_PATCH_H
 #define PATCH_ARM
@@ -15,6 +17,12 @@ static int controller, model, surface;
 static int now_playing, now_playing_available = 1, icon_notifications;
 static unsigned icon_invalidations;
 static unsigned char drawn[4];
+int cfw_theme_custom_light(void) { return 0; }
+struct cfw_palette cfw_theme_palette(void) {
+    return (struct cfw_palette){CFW_THEME_BACKGROUND, CFW_THEME_SIDEBAR, CFW_THEME_INK,
+                               CFW_THEME_ACCENT, CFW_THEME_SELECTION, CFW_THEME_BORDER};
+}
+int cfw_themes_action(const char *action, uint32_t argument) { (void)action; (void)argument; return 0; }
 
 static void string_init(struct osos_string *value, const char *text)
 {

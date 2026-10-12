@@ -55,7 +55,13 @@ def generate(resources, manifest, directory):
                 + ","
             )
         lines.append("};")
-        rows.append(f"    {{{resource_id:#x}, {symbol}, 0}},")
+        role = {
+            "dark/background-dark-image.png": 1,
+            "dark/status-bar-background.png": 2,
+        }.get(entry["file"], 0)
+        rows.append(
+            f"    {{{resource_id:#x}, {symbol}, 0, {len(bitmap)}, {role}, 0, 0}},"
+        )
         total += len(bitmap)
         print(
             f"Asset {entry['name']} ({resource_id:#010x}): {width}x{height}, {len(bitmap):,} bytes ({entry['file']})",

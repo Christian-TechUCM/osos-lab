@@ -17,7 +17,7 @@
     <value number="1" label="On"/>
   </values>
   <values id="cfw_lyrics_backgrounds">
-    <value number="0" label="Solid navy"/>
+    <value number="0" label="Solid theme color"/>
     <value number="1" label="Album artwork"/>
   </values>
   <values id="cfw_lyrics_save_status">
@@ -27,7 +27,7 @@
   <menu id="CFW_LyricsSettings" title="Lyrics">
     <selector id="CFW_LyricsSettings_Font" title="Text size" values="cfw_lyrics_fonts" slot="0" default="1"/>
     <selector id="CFW_LyricsSettings_Color" title="Lyric color" values="cfw_lyrics_colors" slot="1" default="0"/>
-    <selector id="CFW_LyricsSettings_Artwork" title="Background (dark)" values="cfw_lyrics_backgrounds" slot="2" default="0"/>
+    <selector id="CFW_LyricsSettings_Artwork" title="Background" values="cfw_lyrics_backgrounds" slot="2" default="0"/>
     <selector id="CFW_LyricsSettings_Awake" title="Keep screen awake" values="cfw_lyrics_switch" slot="3" default="1"/>
     <action id="CFW_LyricsSettings_Save" title="Save settings" values="cfw_lyrics_save_status"/>
   </menu>

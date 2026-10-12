@@ -53,11 +53,12 @@ RepriseOS package and builds a companion using that iPod's identity.
 This fork has an experimental [native live-lyrics implementation](docs/lyrics-native.md):
 embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment,
 eased scrolling/highlighting, and Settings → Lyrics controls for three text
-sizes, lyric color, dark-mode album backgrounds and keeping the screen awake.
-Light mode uses blue text on white; the lighter Afterburner-inspired dark theme
-uses a continuous blurred multicolor background behind the album header and
-lyrics, with a native status strip. The light-mode refinement was user-tested
-on an MB029; **the latest dark-backdrop and scrolling changes still need hardware testing**.
+sizes, lyric color, optional full-screen album backgrounds in both modes and
+keeping the screen awake. Settings → Themes adds separate light/dark palettes
+and accent choices while preserving the original navy theme. The full-screen
+dark backdrop and playback buttons were user-tested on an MB029; **the new
+light backdrop, selectable themes, volume-wheel candidate and scrolling
+optimizations still need a release build and hardware testing**.
 33 ms animation scheduling is not a measured device frame rate. The separate
 [Mac/browser lyrics lab](experiments/lyrics/README.md) remains a prototype.
 

@@ -10,9 +10,10 @@ layout, contrast, screen-idle and scrolling issues. The subsequent `237a756`
 file update booted: the user reported excellent light-mode rendering, but dark
 mode photos exposed a white header behind white text. Build `716321b` restored
 readable header text, but the user still observed a boxed backdrop and lag.
-The subsequent fixes described here are **local changes, not installed or
-verified on the iPod**. The clickwheel volume fix has an identified missing
-binding; the reported play/pause/next/previous failure remains unresolved.
+The subsequent `ec97c78` source / `a9541fd0` build booted successfully. The user
+confirmed full-screen album backgrounds and working playback buttons on lyrics,
+but **the volume wheel still does not change volume and scrolling still lags**.
+The next local changes below are not installed or hardware-verified.
 
 ## Controls and limitations
 
@@ -30,9 +31,9 @@ It is not saved to disk. Seek and pause behavior follow the player position,
 not elapsed wall time.
 
 Settings → Lyrics offers Small / Medium / Large text, Automatic / Blue / Cyan /
-Purple / Gold lyric color, Background (dark): Solid navy / Album artwork, and
-Keep screen awake. Defaults are Medium, Automatic, Solid navy, On. Existing
-saved artwork choices remain valid and are preserved; select Solid navy manually
+Purple / Gold lyric color, Background: Solid theme color / Album artwork, and
+Keep screen awake. Defaults are Medium, Automatic, Solid theme color, On. Existing
+saved artwork choices remain valid and are preserved; select Solid theme color manually
 to compare performance on an already-configured iPod. Automatic means blue on
 white in light mode and near-white on the chosen dark background. The other colors use separate
 light/dark variants for contrast. Apple's font renderer handles wrapping and character support; the
@@ -52,7 +53,10 @@ The cached native bitmap/context now live alongside their pixel allocation,
 instead of being constructed and destroyed on every text frame. Polling switches
 to 33 ms within 150 ms before the next cue; entering a transition also replaces
 an already-armed 100 ms idle timer rather than waiting for it to expire.
-Each draw now reads the playback snapshot once rather than twice; non-property
+Each timer-driven redraw now reuses the timer's playback snapshot and completed
+scene step, instead of acquiring the audio-position mutex and computing the
+same row geometry again. A track-generation change, unrelated native event or
+view lifecycle change discards this pending snapshot. Non-property
 input events no longer trigger redundant native text loading. These changes
 reduce work, but do not establish an on-device frame-rate improvement. Compare
 the same song, font size and cue transitions with the two background settings.
@@ -74,8 +78,10 @@ fluid effect. Missing or unsupported bitmaps and allocation failures use the
 theme's navy base color; Apple's placeholder can be sampled when the model
 supplies it instead of a cover. No host-generated image or sidecar is needed.
 
-Light mode uses a white reading panel with no album bitmap. In dark artwork
-mode the backdrop, status strip and reading panel crop the same 320 × 240 image
+Light mode now also supports album backgrounds: the blurred colors are blended
+15% with 85% of the light theme surface for readable dark/blue text. Dark mode
+retains its 30% artwork / 70% theme mixture. Both modes' backdrop, status strip
+and reading panel crop the same 320 × 240 image
 using native screen-space bounds. The previous forced navy top band was removed.
 After the first lyric draw or a track-generation change, one complete repaint
 refreshes the header that was drawn before the lyric tag loaded. Animation
@@ -94,13 +100,22 @@ overlay for ready ExtraInfo layout `0x0dad0974` (literal at `0x0821476c`).
 Loading/failed layouts and the loading timer at `+0xe0` are untouched. Support
 queries are inert.
 
+Hardware feedback shows the resource binding alone was insufficient. The next
+candidate also hooks **only** Now Playing's input-dispatch vtable slot
+`0x0899be4c` (expected original `0x0812a070`). It uses the original event-name
+formatter `0x08291974`, checks the current layout via `0x081747ec` + `0x28`, and
+forwards a named `wheel` event on ready layout `0x0dad0974` directly to the same
+Apple volume handler. It preserves the original event pointer, not a fabricated
+wheel delta. All other events/layouts call the original dispatcher. The same
+formatter and event pointer are used by the original dispatcher; these ABIs
+were checked against the pinned 2.0.5 disassembly. This is a **candidate fix**,
+not proof that wheel events reach this slot on hardware.
+
 The stock tables already bind play/pause, next, previous, Menu, Center and
 long-press seeking. Their handlers and event propagation are retained, not
-duplicated with speculative raw-button hooks. The user reports Menu/Center
-still respond. A hardware comparison is still needed to determine why playback
-buttons fail: test those buttons before entering lyrics, while showing lyrics,
-and immediately after leaving, including whether delayed presses eventually
-execute. Do not describe this part as fixed based on the volume change.
+duplicated with speculative raw-button hooks. The user's latest hardware report
+confirms these buttons work. Only volume-wheel input remains unverified in the
+new candidate; do not conflate it with the working playback buttons.
 
 Earbud inline controls are a separate hardware path; see [the investigation](earpods-remote.md).
 
@@ -109,6 +124,58 @@ the main background is now a slightly lighter `#203049`, with `#162238` for the
 sidebar, `#F2F7FF` ink and `#39D0FF` accent. Selection `#244058` and
 border `#354762` are adaptations, not exact copies. Word-level karaoke remains
 unsupported; Sleep Timer is independent.
+
+## Selectable themes (local candidate)
+
+Settings → Themes contains **Dark palette**, **Light palette**, and **Accent
+color**. The existing Dark Mode switch still chooses which palette is active.
+Defaults preserve Original navy and Original light. Theme selections are stored
+separately in versioned/checksummed `iPod_Control/Device/CFWThemes`, with bounded
+selectors, corrupt-record fallback, and a save-failure retry item. The existing
+`CFWDark` and `CFWLyrics` formats are unchanged.
+
+The requested palettes use published surface/sidebar/accent colors:
+
+| Palette | Surface | Sidebar | Accent |
+| --- | --- | --- | --- |
+| Original navy | `#203049` | `#162238` | `#39D0FF` |
+| [Chrome Future Hunter](https://www.dexthemes.com/chrome-future-hunter/dark) | `#111111` | `#0A0A0A` | `#DC2626` |
+| [Huawei](https://www.dexthemes.com/deepseek-huawei/dark) | `#130C10` | `#0D080B` | `#E51A3C` |
+| [Quiet Orbit](https://www.dexthemes.com/quiet-orbit/dark) | `#11121A` | `#0A0B13` | `#8B7CF6` |
+| [Bioluminescent Moon](https://www.dexthemes.com/bioluminescent-moon/light) | `#ECFEFF` | `#E2F4F5` | `#14B8A6` |
+| [Cybernetic Major](https://www.dexthemes.com/cybernetic-major/light) | `#F2FCFF` | `#E8F2F5` | `#38BDF8` |
+
+Ink, borders and selection surfaces are small-screen adaptations, not exact
+DexThemes replicas. Bright light-mode accents use a darker selection/text color
+to preserve white-selection-text contrast. Accent override choices are Theme
+default / Blue / Cyan / Red / Purple / Teal / Gold. Only known native color
+paths and our manifest-listed UI assets are recolored; album artwork and
+red/green semantic indicator pixels are not recolored. Some native UI elements
+outside those paths may remain stock and need hardware review.
+
+Recolored UI assets are cached once per listed asset (maximum 489,764 bytes of
+pixel storage), not once per theme or frame. Their addresses stay valid for
+native cached views. Every recolor starts from immutable templates to avoid
+cumulative rounding errors. Allocation failure falls back to original navy
+assets in dark mode or stock assets in light mode, with no per-frame retry
+loop. The original navy bitmap path is byte-for-byte unchanged.
+
+### Scrolling follow-up
+
+The wallpaper blur is already generated only on track, size or palette changes.
+Removing it avoids a background blit but does not remove the native wrapped-text
+renderer, which still walks and draws visible text every moving frame. This
+change removes duplicated timer/draw queries and stepping, but does **not**
+claim smooth 30 fps. The next larger optimization would be a bounded glyph/line
+raster cache (verify native font/alpha/clip ownership first), followed by measured
+frame pacing and smaller dirty regions. Keep the same track, font size and cue
+boundaries when comparing solid versus album backgrounds on the iPod.
+
+Local verification: 45 patching tests (including address/undefined-behavior
+sanitized native fixtures), 49 tool tests (one skipped), and 31 USB helper tests
+pass. All 30 payload C translation units compile for ARM926EJ-S using Clang.
+This is **not** a pinned GCC 9.5 release build: release linking, reserved-space
+checking, recipe assembly and hardware testing remain required before installation.
 
 Keep screen awake postpones only the lit-display inactivity timer while a
 lyric TextView is visible (including ordinary-text fallback). It does not wake
@@ -122,14 +189,38 @@ record. Bad/short records load defaults; failed writes retain the current RAM
 choice and show “Save failed - retry.” No preferences are written by playback
 or animation callbacks.
 
+## Current update (`ec97c78`, 2026-10-11)
+
+[CI run 38210779648](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38210779648)
+passed 125 Python cases (one skipped), 93 Rust tests (four ignored), prototype
+checks, formatting/lint, GCC 9.5 compilation and packaging. The CI merge tree
+equals the source tree exactly; Settings → CFW Info displays `a9541fd0`.
+The payload uses 913,668 / 983,040 reserved bytes, leaving 69,372 free.
+
+The locally assembled image is 11,617,536 bytes, SHA-256
+`bb547be91ef6890158633f2d05db98d626ba760b17fbe0a67665512b8e33d9fe`.
+The package ZIP SHA-256 is
+`414f492938d51de0b07abffb7357f2035a3717f6d3457e766e8fccfd367fd08d`.
+All 91 original preimages and ten distinct native hook targets passed independent
+checks, as did package asset hashes, the unique ready-layout wheel override,
+preserved native volume/compositor code and destructor trampoline.
+The companion and bootloader are byte-identical to the installed `716321b` build.
+
+Only `/osos-cfw.bin` was replaced after staging/readback verification. The old
+file was verified at `/osos-cfw.previous-716321b.bin` and in the private Mac
+backup `private-backups/ipod-mb029-2026-10-11/before-lyrics-controls-ec97c78/`.
+Settings and companion contents were compared unchanged; music and NOR were not
+written. Safe ejection succeeded. A reboot is required; successful boot and
+the requested visual/volume tests have not yet been confirmed by the user.
+
 ## Verified firmware bindings
 
-Local validation for the current changes: 45 patching tests pass (including
+Local validation for these changes: 45 patching tests pass (including
 ASan/UBSan native fixtures); 49 tools tests pass with one skipped; Ruff and
 format checks pass. Four changed C units also compile as freestanding ARM926
 objects with Clang. Regenerated UI structure metadata matches the pinned
-private image. This is **not** a linked/packaged release: the required GCC 9.5
-release build and on-device performance/input tests remain outstanding.
+private image. The subsequent GCC 9.5 CI build and package checks also pass;
+on-device performance/input tests remain outstanding.
 
 The supported plaintext input is `osos.bin`, 10,634,496 bytes, SHA-256
 `660eb6ff5f498bb1a75e85f1f9921bf0c753525a8bca9b4fa47ed260e5ad0f1e`.

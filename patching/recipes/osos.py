@@ -71,6 +71,7 @@ def build_recipe(
                 "lyrics_settings.ui",
                 "album_artists.ui",
                 "dark_mode.ui",
+                "themes.ui",
             )
         ],
         directory,

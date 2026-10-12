@@ -4,6 +4,7 @@
 #include "lyrics_settings.h"
 #include "dark_mode.h"
 #include "theme.h"
+#include "themes.h"
 #include "patch.h"
 #include "lyrics_ui.h"
 
@@ -25,6 +26,8 @@ static struct {
     unsigned interval, armed, art_attempted;
     unsigned armed_interval, objects_ready;
     unsigned refresh_screen;
+    unsigned art_theme, pending, stepped;
+    struct cfw_lyrics_snapshot frame;
     uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
     unsigned font, dark, color, artwork;
 } visual;
@@ -67,6 +70,7 @@ static void release(void *view)
     free_background();
     visual.owner = visual.background = 0;
     visual.scene.valid = visual.armed = visual.art_attempted = 0;
+    visual.pending = visual.stepped = 0;
 }
 
 static void leave_reading_view(void *view)
@@ -127,11 +131,13 @@ static int measure(void *context, const char *text, int width)
 
 static void make_background(uint32_t generation, int width, int height)
 {
+    unsigned theme = cfw_theme_key();
     if (visual.art_attempted && visual.art_generation == generation &&
-        visual.art_width == width && visual.art_height == height) return;
+        visual.art_width == width && visual.art_height == height && visual.art_theme == theme) return;
     free_background();
     visual.art_attempted = 1;
     visual.art_generation = generation;
+    visual.art_theme = theme;
     visual.art_width = width;
     visual.art_height = height;
     unsigned char *bitmap = cfw_lyrics_artwork();
@@ -156,7 +162,7 @@ static void make_background(uint32_t generation, int width, int height)
             for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = rgba[c];
         }
     }
-    cfw_lyrics_blur(rgb);
+    cfw_lyrics_blur_palette(rgb, cfw_theme_palette().background, !cfw_dark_mode_enabled());
     unsigned bytes = 28 + (((unsigned)width * 2 + 3) & ~3u) * (unsigned)height;
     void *data = ((void *(*)(uint32_t))OSOS_IMPORT_ALLOC)(bytes);
     if (!data) return; /* one attempt per track/size, no allocation retry loop */
@@ -175,8 +181,8 @@ static void make_background(uint32_t generation, int width, int height)
 static void draw_background(void *view, void *context, int32_t rect[4])
 {
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0);
-    if (!visual.dark || !visual.artwork || !visual.background) {
-        unsigned rgb = visual.dark ? CFW_THEME_BACKGROUND : 0xffffffu;
+    if (!visual.artwork || !visual.background) {
+        unsigned rgb = cfw_theme_palette().background;
         unsigned char neutral[4] = {rgb >> 16, rgb >> 8, rgb, 255};
         osos_graphics_set_color(context, neutral);
         ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
@@ -189,7 +195,7 @@ static void draw_background(void *view, void *context, int32_t rect[4])
     for (unsigned i = 0; i < 4; i++)
         src[i] = rect[i] + RECT(view, 0x80)[i & 1];
     if (src[0] < 0 || src[1] < 0 || src[2] > 240 || src[3] > 320) {
-        unsigned rgb = CFW_THEME_BACKGROUND;
+        unsigned rgb = cfw_theme_palette().background;
         unsigned char neutral[4] = {rgb >> 16, rgb >> 8, rgb, 255};
         osos_graphics_set_color(context, neutral);
         ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
@@ -213,7 +219,8 @@ PATCH_ARM void cfw_lyrics_backdrop_draw(void *view, void *argument, void *clip)
         void *window = ((window_fn)OSOS_VIEW_WINDOW)(view);
         backdrop = window && window == ((window_fn)OSOS_VIEW_WINDOW)(reading_view);
     }
-    if (!backdrop || !cfw_dark_mode_enabled()) {
+    if (!backdrop || (!cfw_dark_mode_enabled() && !cfw_theme_custom_light() &&
+                     !cfw_lyrics_album_background())) {
         ((void (*)(void *, void *, void *))OSOS_BITMAP_VIEW_DRAW)(view, argument, clip);
         return;
     }
@@ -224,7 +231,7 @@ PATCH_ARM void cfw_lyrics_backdrop_draw(void *view, void *argument, void *clip)
     int32_t rect[4];
     ((void (*)(void *, void *))OSOS_VIEW_CONTENT_RECT)(view, rect);
     if (rect[2] <= rect[0] || rect[3] <= rect[1]) return;
-    visual.dark = 1;
+    visual.dark = cfw_dark_mode_enabled();
     visual.artwork = cfw_lyrics_album_background();
     if (visual.artwork) make_background(cfw_lyrics_generation(), 320, 240);
     uint32_t context[0x44 / 4];
@@ -244,7 +251,12 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     if (!selected(view) || !visible(view) || (WORD(view, 0xf0) & 0x40)) goto stock;
     /* Native events invalidate the source; animation frames reuse its copied
      * LRC instead of repeatedly scanning/loading the entire metadata tag. */
-    int have_snapshot = visual.owner == view && cfw_lyrics_snapshot(&snapshot);
+    int reused = visual.owner == view && visual.pending &&
+                 visual.frame.generation == cfw_lyrics_generation();
+    int stepped = reused && visual.stepped;
+    if (reused) snapshot = visual.frame;
+    visual.pending = visual.stepped = 0;
+    int have_snapshot = reused || (visual.owner == view && cfw_lyrics_snapshot(&snapshot));
     if (!have_snapshot) {
         CALL0(OSOS_TEXT_VIEW_LOAD, view);
         if (!cfw_lyrics_snapshot(&snapshot)) goto stock;
@@ -269,6 +281,7 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
             (view, PTR(view, 0x38), fonts[font < 3 ? font : 1], 0);
         visual.font = font;
         visual.scene.valid = 0;
+        stepped = 0;
     }
     ((void (*)(void *, void *))OSOS_VIEW_DRAW_CONTEXT)(view, context);
     int cue = cfw_lrc_current(snapshot.lrc, snapshot.position, snapshot.delay_ms);
@@ -278,14 +291,16 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
         scene->width != width || scene->height != height) {
         if (!cfw_lyrics_scene_layout(scene, snapshot.lrc, cue, width, height,
                                      snapshot.generation, measure, context)) goto stock;
+        stepped = 0;
     }
-    visual.interval = cfw_lyrics_scene_step(scene, snapshot.lrc, snapshot.position, snapshot.delay_ms);
+    if (!stepped)
+        visual.interval = cfw_lyrics_scene_step(scene, snapshot.lrc, snapshot.position, snapshot.delay_ms);
     visual.position = snapshot.position;
     visual.delay_ms = snapshot.delay_ms;
     visual.dark = cfw_dark_mode_enabled();
     visual.color = cfw_lyrics_color();
     visual.artwork = cfw_lyrics_album_background();
-    if (visual.dark && visual.artwork) make_background(snapshot.generation, 320, 240);
+    if (visual.artwork) make_background(snapshot.generation, 320, 240);
     draw_background(view, context, rect);
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0x21);
     for (unsigned i = 0; i < scene->rows; i++) {
@@ -297,6 +312,10 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
         static const unsigned dark[] = {0xf2f7ff, 0x8ac2ff, 0x80e5ff, 0xd8b7ff, 0xffdf91};
         unsigned choice = visual.color < 5 ? visual.color : 0;
         unsigned rgb = visual.dark ? dark[choice] : light[choice];
+        if (!choice) {
+            struct cfw_palette palette = cfw_theme_palette();
+            rgb = visual.dark ? palette.ink : cfw_theme_custom_light() ? palette.selection : light[0];
+        }
         unsigned char color[4] = {rgb >> 16, rgb >> 8, rgb, 255};
         for (unsigned c = 0; c < 3; c++) {
             if (visual.dark) color[c] = color[c] * row->brightness / 250;
@@ -328,7 +347,9 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
         struct cfw_lyrics_snapshot snapshot;
         unsigned interval = 33; /* a new cue must not inherit the idle 100 ms poll */
         int changed = 1;
-        if (cfw_lyrics_snapshot(&snapshot) && visual.scene.generation == snapshot.generation &&
+        int have_snapshot = cfw_lyrics_snapshot(&snapshot);
+        visual.pending = visual.stepped = 0;
+        if (have_snapshot && visual.scene.generation == snapshot.generation &&
             visual.scene.cue == cfw_lrc_current(snapshot.lrc, snapshot.position, snapshot.delay_ms)) {
             int top[CFW_LYRICS_ROWS];
             unsigned color[CFW_LYRICS_ROWS];
@@ -337,10 +358,16 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
                 color[i] = visual.scene.row[i].brightness;
             }
             interval = cfw_lyrics_scene_step(&visual.scene, snapshot.lrc, snapshot.position, snapshot.delay_ms);
+            visual.stepped = 1;
             changed = 0;
             for (unsigned i = 0; i < visual.scene.rows; i++)
                 if (top[i] != visual.scene.row[i].top || color[i] != visual.scene.row[i].brightness) changed = 1;
             if (snapshot.position == visual.position && snapshot.delay_ms == visual.delay_ms) interval = 100;
+        }
+        if (have_snapshot && (changed || visual.refresh_screen)) {
+            visual.frame = snapshot;
+            visual.pending = 1;
+            visual.interval = interval;
         }
         /* The backdrop/status draw precedes the first lyric draw. Schedule a
          * single complete repaint once the tag, artwork and visible view are
@@ -353,6 +380,8 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
         arm(view, interval);
         return 1;
     }
+    /* No borrowed playback snapshot survives an unrelated native event. */
+    visual.pending = visual.stepped = 0;
     int result = ((int (*)(void *, const void *))OSOS_TEXT_VIEW_EVENT)(view, event);
     /* Let the native property handler refresh before the next draw. */
     if (visual.owner == view && event[1] == 19) CALL0(OSOS_TEXT_VIEW_LOAD, view);

@@ -130,7 +130,7 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
     return interval;
 }
 
-void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])
+void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light)
 {
     uint8_t temp[CFW_LYRICS_SAMPLES][3];
     for (unsigned pass = 0; pass < 3; pass++) {
@@ -155,10 +155,15 @@ void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])
             for (unsigned c = 0; c < 3; c++) rgb[i][c] = temp[i][c];
     }
     /* Dark enough for muted neighboring lines as well as the highlighted line. */
-    static const unsigned neutral[3] = {CFW_THEME_BACKGROUND >> 16,
-        (CFW_THEME_BACKGROUND >> 8) & 255, CFW_THEME_BACKGROUND & 255};
+    const unsigned neutral[3] = {background >> 16, (background >> 8) & 255, background & 255};
+    unsigned weight = light ? 15 : 30;
     for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
-        for (unsigned c = 0; c < 3; c++) rgb[i][c] = (rgb[i][c] * 30 + neutral[c] * 70) / 100;
+        for (unsigned c = 0; c < 3; c++) rgb[i][c] = (rgb[i][c] * weight + neutral[c] * (100 - weight)) / 100;
+}
+
+void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])
+{
+    cfw_lyrics_blur_palette(rgb, CFW_THEME_BACKGROUND, 0);
 }
 
 static void word(uint8_t *out, unsigned offset, uint32_t value, unsigned size)

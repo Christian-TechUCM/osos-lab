@@ -6,6 +6,9 @@ struct cfw_bitmap_asset {
     uint32_t id;
     const unsigned char *data;
     const unsigned char *original;
+    uint32_t size, role;
+    unsigned char *themed;
+    uint32_t theme_key;
 };
 
 extern struct cfw_bitmap_asset cfw_bitmap_assets[];

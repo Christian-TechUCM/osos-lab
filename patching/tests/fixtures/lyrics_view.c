@@ -5,6 +5,8 @@
 #include <stdio.h>
 #define _Static_assert(...)
 #include "../../../payload/lyrics.h"
+#include "../../../payload/themes.h"
+#include "../../../payload/theme.h"
 #undef _Static_assert
 #define CFW_PATCH_H
 #define PATCH_ARM
@@ -26,6 +28,13 @@ unsigned cfw_lyrics_color(void) { return setting_color; }
 unsigned cfw_lyrics_album_background(void) { return setting_art; }
 unsigned cfw_lyrics_keep_awake(void) { return setting_awake; }
 int cfw_dark_mode_enabled(void) { return dark; }
+static unsigned theme_variant;
+int cfw_theme_custom_light(void) { return !dark && theme_variant; }
+unsigned cfw_theme_key(void) { return (dark ? 129 : 1) + theme_variant; }
+struct cfw_palette cfw_theme_palette(void) {
+    return (struct cfw_palette){dark ? CFW_THEME_BACKGROUND : 0xffffff,
+        CFW_THEME_SIDEBAR, dark ? CFW_THEME_INK : 0x202020, CFW_THEME_ACCENT, 0x236cc4, CFW_THEME_BORDER};
+}
 static void set_font(void *p, void *service, uint32_t font, int invalid) {
     /* 64-bit host fields overlap native four-byte slots; service is opaque. */
     (void)service;
@@ -176,7 +185,8 @@ int main(void)
     snap.position = 3000; tick(); assert(invalidations == 1); draw();
     assert(interval == 33); /* new cue no longer waits another idle tick */
     assert(measurements == first_measures); /* overlapping rows reused */
-    snap.position = 3100; tick(); assert(invalidations == 2 && interval == 33); draw();
+    snap.position = 3100; tick(); assert(invalidations == 2 && interval == 33);
+    first_snapshots = snapshots; draw(); assert(snapshots == first_snapshots); /* reuse timer snapshot */
     arm(view, 100); int before_rearm = stops;
     draw(); assert(interval == 33 && stops == before_rearm + 1);
     tick(); assert(invalidations == 2 && interval == 100); /* pause mid-transition */
@@ -203,10 +213,14 @@ int main(void)
     WORD(art, 0xc) = 16; RECT(art, 0x98)[3] = 1025; snap.generation++; draw();
     assert(!visual.background && allocs == attempts); /* corrupt bounds */
     RECT(art, 0x98)[3] = 100;
-    /* Appearance changes do not sample artwork in light mode. */
+    /* Light mode has its own bright, cached full-screen album background. */
     dark = 0; snap.generation++; attempts = samples; int old_blits = blits;
-    draw(); assert(samples == attempts && blits == old_blits && fills);
+    draw(); assert(samples == attempts + 192 && blits == old_blits + 1);
+    attempts = samples; old_blits = blits;
+    draw(); assert(samples == attempts && blits == old_blits + 1);
+    old_blits = blits;
     setting_color = 3; setting_font = 2; draw(); assert(visual.font == 2 && visual.color == 3);
+    old_blits = blits;
     setting_art = 0; dark = 1; draw(); assert(samples == attempts && blits == old_blits);
     setting_art = 1; draw(); assert(samples > attempts && blits > old_blits);
     /* First layout may have an empty or one-line auto-sized parent. */
@@ -254,6 +268,12 @@ int main(void)
     WORD(status, 0x4c) = OSOS_STATUS_BACKDROP_VIEW_ID;
     cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
     assert(last_source[0] == 0 && last_source[2] == 19 && last_source[3] == 320);
+    dark = 0; attempts = samples;
+    cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
+    assert(last_source[0] == 19 && samples == attempts + 192);
+    cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
+    assert(last_source[0] == 0 && last_source[2] == 19 && samples == attempts + 192);
+    dark = 1;
     int stock_bitmaps = bitmap_draws;
     different_window = 1;
     cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);

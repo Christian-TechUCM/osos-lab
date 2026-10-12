@@ -29,6 +29,7 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *, const struct cfw_lrc *
                                uint32_t position, int delay_ms);
 /* RGB samples in spatial order, blurred with clamped edges and darkened. */
 void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3]);
+void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light);
 /* A native little-endian RGB565 BMap, bounded to 320 x 240. */
 int cfw_lyrics_background(void *out, size_t capacity, unsigned width, unsigned height,
                           const uint8_t rgb[CFW_LYRICS_SAMPLES][3]);

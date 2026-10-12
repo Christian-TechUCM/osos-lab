@@ -7,10 +7,11 @@
 #define PATCH_ARM
 #include "../../../payload/assets.h"
 #include "../../../payload/native/bindings.h"
+#include "../../../payload/themes.h"
 
 static const unsigned char stock[40], replacement[40], unlisted[40];
 struct cfw_bitmap_asset cfw_bitmap_assets[] = {
-    {0x0dad012a, replacement, NULL}
+    {0x0dad012a, replacement, NULL, sizeof(replacement), 2, NULL, 0}
 };
 const uint32_t cfw_bitmap_asset_count = 1;
 static unsigned char view[0x168], context[0x48], shared_bitmap[0xb8];
@@ -20,6 +21,14 @@ static int resource_lookups;
 static int color_lookups;
 static const uint32_t stock_color = 0xffffff, mapped_color = 0xfffffe;
 static int visible = 1;
+static unsigned variant, allocations, recolors;
+static int custom_light, oom;
+static unsigned char theme_storage[40];
+static void *allocate(uint32_t size) {
+    assert(size == sizeof(theme_storage)); allocations++; return oom ? NULL : theme_storage;
+}
+#undef OSOS_IMPORT_ALLOC
+#define OSOS_IMPORT_ALLOC allocate
 
 static void put_pointer(void *base, unsigned offset, const void *pointer)
 {
@@ -34,6 +43,15 @@ static void *get_pointer(void *base, unsigned offset)
 }
 
 int cfw_dark_mode_enabled(void) { return dark; }
+int cfw_theme_custom_light(void) { return custom_light; }
+unsigned cfw_theme_key(void) { return (dark ? 129 : 1) + variant; }
+struct cfw_palette cfw_theme_palette(void) { return (struct cfw_palette){0}; }
+void cfw_theme_bitmap(unsigned char *out, const unsigned char *source, unsigned size,
+                      unsigned role, struct cfw_palette palette) {
+    (void)palette;
+    assert(out == theme_storage && source == replacement && size == 40 && role == 2);
+    memcpy(out, source, size); out[28] = (unsigned char)cfw_theme_key(); recolors++;
+}
 
 const void *cfw_dark_mode_color(uint32_t id, const void *color)
 {
@@ -249,5 +267,27 @@ int main(void)
     check_dynamic_visibility();
     check_cached_images();
     check_dynamic_dark_source();
+    /* Failed allocation falls back, and never retries each frame. */
+    dark = 1; variant = 1; oom = 1;
+    assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == replacement);
+    assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == replacement);
+    assert(allocations == 1 && !recolors);
+    dark = 0; custom_light = 1;
+    assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == stock);
+    assert(allocations == 2 && !recolors);
+    oom = 0; variant = 2;
+    assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == theme_storage);
+    assert(allocations == 3 && recolors == 1);
+    assert(cfw_bitmap_resource_get(NULL, 0x424d6170, 0x0dad012a) == theme_storage);
+    assert(recolors == 1);
+    memset(cache, 0, sizeof(cache)); *(uint32_t *)(cache + 4) = 0x0dad012a;
+    cfw_bitmap_cache_load(cache);
+    assert(get_pointer(cache + 0xc, 4) == theme_storage + 28);
+    variant = 1; cfw_bitmap_cache_load(cache);
+    assert(get_pointer(cache + 0xc, 4) == theme_storage + 28 && recolors == 2 && allocations == 3);
+    dark = 1; custom_light = 0; variant = 0; cfw_bitmap_cache_load(cache);
+    assert(get_pointer(cache + 0xc, 4) == replacement + 28); /* exact original navy */
+    dark = 0; cfw_bitmap_cache_load(cache);
+    assert(get_pointer(cache + 0xc, 4) == stock + 28); /* exact original light */
     return 0;
 }

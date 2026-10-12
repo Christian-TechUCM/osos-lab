@@ -100,5 +100,11 @@ int main(void)
             assert(cfw_lyrics_background(pixels + 1, sizeof(pixels) - 2, w, h, rgb));
     assert(!cfw_lyrics_background(pixels, sizeof(pixels), 0, 1, rgb));
     assert(!cfw_lyrics_background(pixels, sizeof(pixels), 321, 240, rgb));
+    memset(rgb, 0, sizeof(rgb));
+    cfw_lyrics_blur_palette(rgb, 0xecfeff, 1);
+    for (unsigned n = 0; n < CFW_LYRICS_SAMPLES; n++) {
+        assert(rgb[n][0] == 236 * 85 / 100);
+        assert(rgb[n][1] == 254 * 85 / 100 && rgb[n][2] == 255 * 85 / 100);
+    }
     puts("Native lyric scene: easing, pause/seek, timing, long cues, blur and bounds passed");
 }

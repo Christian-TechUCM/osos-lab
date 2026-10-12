@@ -7,6 +7,7 @@
 #include "preferences.h"
 #include "patch.h"
 #include "theme.h"
+#include "themes.h"
 
 enum {
     DARK_MODE_OFF_RECORD = 0x304b5244, /* DRK0 */
@@ -98,17 +99,19 @@ PATCH_ARM void cfw_dark_mode_fill(void *surface, const void *rect,
                                 void *clip)
 {
     unsigned char mapped[4];
-    uint32_t rgb = CFW_THEME_BACKGROUND;
+    struct cfw_palette palette = cfw_theme_palette();
+    int themed = enabled || cfw_theme_custom_light();
+    uint32_t rgb = palette.background;
     int shade = -1;
-    if (enabled && color[0] == color[1] && color[1] == color[2] &&
+    if (themed && color[0] == color[1] && color[1] == color[2] &&
         color[0] >= BACKGROUND_LIGHT_MIN)
-        shade = (255 - color[0]) / 4;
+        shade = enabled ? (255 - color[0]) / 4 : 0;
     /* CoverFlow_Backside_Border_Color (COLR 0x0dad05d8). */
-    else if (enabled && color[0] == 0x7e && color[1] == 0x81 && color[2] == 0x83) {
-        rgb = CFW_THEME_BORDER;
+    else if (themed && color[0] == 0x7e && color[1] == 0x81 && color[2] == 0x83) {
+        rgb = palette.border;
         shade = 0;
-    } else if (enabled && color[0] == 35 && color[1] == 108 && color[2] == 196) {
-        rgb = CFW_THEME_SELECTION;
+    } else if (themed && color[0] == 35 && color[1] == 108 && color[2] == 196) {
+        rgb = palette.selection;
         shade = 0;
     }
     if (shade >= 0) {
@@ -123,10 +126,11 @@ PATCH_ARM void cfw_dark_mode_fill(void *surface, const void *rect,
 
 PATCH_ARM void cfw_dark_mode_clear_color(int red, int green, int blue, int alpha)
 {
-    if (enabled) {
-        red = CFW_THEME_RED(CFW_THEME_BACKGROUND) * 0x10000 / 255;
-        green = CFW_THEME_GREEN(CFW_THEME_BACKGROUND) * 0x10000 / 255;
-        blue = CFW_THEME_BLUE(CFW_THEME_BACKGROUND) * 0x10000 / 255;
+    if (enabled || cfw_theme_custom_light()) {
+        unsigned rgb = cfw_theme_palette().background;
+        red = CFW_THEME_RED(rgb) * 0x10000 / 255;
+        green = CFW_THEME_GREEN(rgb) * 0x10000 / 255;
+        blue = CFW_THEME_BLUE(rgb) * 0x10000 / 255;
     }
     osos_gles_clear_color(red, green, blue, alpha);
 }
@@ -134,25 +138,36 @@ PATCH_ARM void cfw_dark_mode_clear_color(int red, int green, int blue, int alpha
 PATCH_ARM uint32_t cfw_dark_mode_reflection_blend(uint32_t pixel, uint32_t background,
                                                 int weight)
 {
-    if (enabled)
-        background = CFW_THEME_RGB565(CFW_THEME_BACKGROUND);
+    if (enabled || cfw_theme_custom_light())
+        background = CFW_THEME_RGB565(cfw_theme_palette().background);
     return osos_rgb565_blend(pixel, background, weight);
 }
 
 PATCH_ARM void cfw_dark_mode_text_color(void *context, const unsigned char *color)
 {
     unsigned char mapped[4];
+    struct cfw_palette palette = cfw_theme_palette();
     if (enabled && color[0] == color[1] && color[1] == color[2] &&
         color[0] <= TEXT_DARK_MAX) {
-        mapped[0] = CFW_THEME_RED(CFW_THEME_INK) - color[0] / 2;
-        mapped[1] = CFW_THEME_GREEN(CFW_THEME_INK) - color[0] / 2;
-        mapped[2] = CFW_THEME_BLUE(CFW_THEME_INK) - color[0] / 2;
+        mapped[0] = CFW_THEME_RED(palette.ink) - color[0] / 2;
+        mapped[1] = CFW_THEME_GREEN(palette.ink) - color[0] / 2;
+        mapped[2] = CFW_THEME_BLUE(palette.ink) - color[0] / 2;
         mapped[3] = color[3];
         color = mapped;
-    } else if (enabled && color[0] == 35 && color[1] == 108 && color[2] == 196) {
-        mapped[0] = CFW_THEME_RED(CFW_THEME_ACCENT);
-        mapped[1] = CFW_THEME_GREEN(CFW_THEME_ACCENT);
-        mapped[2] = CFW_THEME_BLUE(CFW_THEME_ACCENT);
+    } else if (cfw_theme_custom_light() && color[0] == color[1] && color[1] == color[2] &&
+               color[0] <= TEXT_DARK_MAX) {
+        mapped[0] = CFW_THEME_RED(palette.ink) + color[0] / 2;
+        mapped[1] = CFW_THEME_GREEN(palette.ink) + color[0] / 2;
+        mapped[2] = CFW_THEME_BLUE(palette.ink) + color[0] / 2;
+        mapped[3] = color[3];
+        color = mapped;
+    } else if ((enabled || cfw_theme_custom_light()) && color[0] == 35 && color[1] == 108 && color[2] == 196) {
+        /* Bright accents are selection/icon colors; light-mode text uses its
+         * darker selection counterpart for readable contrast. */
+        unsigned rgb = enabled ? palette.accent : palette.selection;
+        mapped[0] = CFW_THEME_RED(rgb);
+        mapped[1] = CFW_THEME_GREEN(rgb);
+        mapped[2] = CFW_THEME_BLUE(rgb);
         mapped[3] = color[3];
         color = mapped;
     }

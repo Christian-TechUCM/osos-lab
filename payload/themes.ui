@@ -1,0 +1,34 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<ui>
+  <values id="cfw_dark_palettes">
+    <value number="0" label="Original navy"/>
+    <value number="1" label="Chrome Future Hunter"/>
+    <value number="2" label="Huawei"/>
+    <value number="3" label="Quiet Orbit"/>
+  </values>
+  <values id="cfw_light_palettes">
+    <value number="0" label="Original light"/>
+    <value number="1" label="Bioluminescent Moon"/>
+    <value number="2" label="Cybernetic Major"/>
+  </values>
+  <values id="cfw_accents">
+    <value number="0" label="Theme default"/>
+    <value number="1" label="Blue"/>
+    <value number="2" label="Cyan"/>
+    <value number="3" label="Red"/>
+    <value number="4" label="Purple"/>
+    <value number="5" label="Teal"/>
+    <value number="6" label="Gold"/>
+  </values>
+  <values id="cfw_theme_save_status">
+    <value number="0" label="Save settings"/>
+    <value number="1" label="Save failed - retry"/>
+  </values>
+  <menu id="CFW_Themes" title="Themes">
+    <selector id="CFW_Themes_Dark" title="Dark palette" values="cfw_dark_palettes" slot="0" default="0"/>
+    <selector id="CFW_Themes_Light" title="Light palette" values="cfw_light_palettes" slot="1" default="0"/>
+    <selector id="CFW_Themes_Accent" title="Accent color" values="cfw_accents" slot="2" default="0"/>
+    <action id="CFW_Themes_Save" title="Save settings" values="cfw_theme_save_status"/>
+  </menu>
+  <settings-entry menu="CFW_Themes" after="SettingsMenu_ListItem_Brightness" open="CFW_Themes_Open"/>
+</ui>
