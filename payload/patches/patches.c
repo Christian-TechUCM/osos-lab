@@ -90,6 +90,7 @@ PATCH_POINTER(0x08998708, OSOS_NOW_PLAYING_PROPERTY, cfw_lyrics_property);
 PATCH_POINTER(0x089986d4, OSOS_NOW_PLAYING_MODEL_EVENT, cfw_lyrics_model_event);
 /* Only the display inactivity timer; manual shutdown and SleepService remain stock. */
 PATCH_POINTER(0x0899302c, OSOS_DISPLAY_POWER_EVENT, cfw_lyrics_power_event);
+PATCH_POINTER(0x0899309c, 0x082a1674, cfw_lyrics_power_event_secondary);
 /* Only the lyric text view: stock small Helvetica -> stock large bold font. */
 PATCH_WORD(0x0882ad3c, 0x0dad0013, 0x0dad001e);
 /* Shared TextView hooks immediately forward every non-lyric view. */

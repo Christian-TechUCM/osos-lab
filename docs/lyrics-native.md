@@ -102,7 +102,10 @@ Power binding evidence: `0x0819b44c` and `0x0819bdcc` set lit state `+0x68`,
 select `+0x6c` intervals from the native Backlight setting (`0x6032..0x603c`),
 and enable the display. Idle-clock entry `0x0819bf68` and dark entry
 `0x0819af1c` clear `+0x68`; the clock controller is created by the former.
-Only the event-handler vtable slot is replaced, with its original word checked.
+The primary slot and secondary-base slot `0x0899309c` (original `0x082a1674`)
+are replaced, with both original words checked. The latter's ARM thunk subtracts
+`0x48` from the UI base and directly branches to the handler; our adapter keeps
+that adjustment so native timer delivery cannot bypass the hook.
 The unrelated SleepService timer at `service+0x60` is untouched. Hardware
 acceptance must explicitly test idle timeout, manual shutdown and Sleep Timer.
 

@@ -129,6 +129,14 @@ int main(void)
     static char oversized[CFW_LRC_MAX_TEXT + 2];
     memset(oversized, 'x', sizeof(oversized) - 1); tag = oversized;
     assert(read_line() == tag && !lyrics.lrc.count);
+    /* Repeated timestamps can expand a small tag beyond the plain-fallback
+     * buffer. Preserve the source instead of truncating or overflowing. */
+    static char expanded[2048];
+    size_t used = 0;
+    for (unsigned i = 0; i < 40; i++)
+        used += (size_t)snprintf(expanded + used, sizeof(expanded) - used, "[00:%02u]", i);
+    memset(expanded + used, 'x', 1000); expanded[used + 1000] = 0;
+    tag = expanded; assert(read_line() == tag && !lyrics.lrc.count);
     available = 0; action("CFW_Lyrics"); assert(prepares == 1 && shows == 1);
     cfw_lyrics_menu((struct osos_context_menu *)&controller); assert(appends == 4);
     /* Deterministic malformed byte/length cases exercise the actual parser. */

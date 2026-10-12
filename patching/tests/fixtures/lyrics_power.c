@@ -36,5 +36,9 @@ int main(void) {
     awake = 0; event[2] = (uint32_t)(uintptr_t)(controller + 0x6c);
     assert(cfw_lyrics_power_event(controller, event) == 7); /* leaving lyrics */
     assert(starts == 1 && forwarded == 7);
+    awake = 1;
+    assert(cfw_lyrics_power_event_secondary(controller + 0x48, event) == 1 && starts == 2);
+    event[2] = (uint32_t)(uintptr_t)(controller + 0x98);
+    assert(cfw_lyrics_power_event_secondary(controller + 0x48, event) == 7 && forwarded == 8);
     puts("Lyric wake scope: only lit-display inactivity; other power events forwarded");
 }

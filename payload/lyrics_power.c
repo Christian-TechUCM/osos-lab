@@ -17,3 +17,10 @@ PATCH_ARM int cfw_lyrics_power_event(void *controller, const uint32_t *event)
     }
     return ((int (*)(void *, const uint32_t *))OSOS_DISPLAY_POWER_EVENT)(controller, event);
 }
+
+/* Native UI timers address the controller's secondary base. Its stock thunk
+ * subtracts 0x48 then branches directly, bypassing the primary vtable slot. */
+PATCH_ARM int cfw_lyrics_power_event_secondary(void *base, const uint32_t *event)
+{
+    return cfw_lyrics_power_event((unsigned char *)base - 0x48, event);
+}
