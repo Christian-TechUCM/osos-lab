@@ -39,6 +39,7 @@ class Document:
     after: str | int = ""
     open_action: str = ""
     strings: dict[str, str] = field(default_factory=dict)
+    colors: dict[str, int] = field(default_factory=dict)
     events: list[ScreenEvent] = field(default_factory=list)
     music_entry: dict[str, str] | None = None
 

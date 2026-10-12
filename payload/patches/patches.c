@@ -3,6 +3,12 @@
 #include "patch.h"
 #include "native/bindings.h"
 #include "patches/sites.h"
+#include "lyrics_ui.h"
+
+/* Extra Info's background reused NowPlaying_Idle_Background. Give it its own
+ * COLR source (View 0x0dad0929 +0x68), preserving the clock's light surface. */
+PATCH_WORD(0x0882ab6c, 0x0dad0851, CFW_LYRICS_BACKDROP);
+PATCH_POINTER(0x08988974, OSOS_BITMAP_VIEW_DRAW, cfw_lyrics_backdrop_draw);
 
 /* Dark-mode software colors and manifest-selected bitmap artwork. */
 PATCH_JUMP(OSOS_BITMAP_VIEW_LOAD_ENTRY, 0xe92d41f0, 0xe1a04000, cfw_bitmap_view_load);

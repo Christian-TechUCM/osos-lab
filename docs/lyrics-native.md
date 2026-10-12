@@ -6,8 +6,10 @@ It uses the embedded lyric text already loaded by Apple's player and
 the existing Now Playing Extra Info screen. This is native firmware code, not
 the browser preview. The user installed the previous `56538c3` build on their
 MB029 and reported working playback/lyrics. Their hardware photos exposed
-layout, contrast, screen-idle and scrolling issues. The refinements below are
-host-tested changes, **not yet installed or verified on the iPod**.
+layout, contrast, screen-idle and scrolling issues. The subsequent `237a756`
+file update booted: the user reported excellent light-mode rendering, but dark
+mode photos exposed a white header behind white text. The follow-up below is
+**not yet installed or verified on the iPod**.
 
 ## Controls and limitations
 
@@ -32,7 +34,7 @@ light/dark variants for contrast. Apple's font renderer handles wrapping and cha
 lyric renderer positions up to five cue groups inside the existing reading
 panel. Header, album thumbnail, navigation and playback controls remain native.
 
-Transitions ease over 350 ms (less for short cues), moving the incoming line
+Transitions ease over 500 ms (less for short cues), moving the incoming line
 toward the center and crossfading its brightness with the outgoing line. A cue
 taller than the panel pans during its available time (a six-second display
 window for the last cue, which has no following timestamp). The view's existing timer
@@ -41,6 +43,10 @@ invalidated; a paused song clock freezes the transition. These are scheduling
 targets, not measured iPod frame rates. Animation frames reuse the copied tag;
 cue changes reuse overlapping row measurements and no longer trigger native
 full-text property relayout. An opaque background blit skips the redundant fill.
+The cached native bitmap/context now live alongside their pixel allocation,
+instead of being constructed and destroyed on every text frame. Polling switches
+to 33 ms within 150 ms before the next cue; entering a transition also replaces
+an already-armed 100 ms idle timer rather than waiting for it to expire.
 
 The reading panel reserves 140 pixels independently of its auto-sized parent's
 initial bounds. This removes a one-line/empty-parent measurement feedback loop.
@@ -51,19 +57,21 @@ must still be rechecked on hardware; the photos alone cannot prove the cause.
 Artwork is sampled spatially into a 16 × 12 RGB grid, blurred with three box
 passes, darkened and expanded into a cached RGB565 bitmap. Bounded ordered
 dithering reduces gradient banding on the 16-bit display. Different regions of
-the cover contribute different colors. The background covers only the lyric
-reading panel, not the full screen. It is static per track, not Apple's animated
+the cover contribute different colors. The backdrop now covers the full Extra
+Info content area, including album/artist header and side margins. The native
+status/navigation strip remains in place. It is static per track, not Apple's animated
 fluid effect. Missing or unsupported bitmaps and allocation failures use the
 theme's navy base color; Apple's placeholder can be sampled when the model
 supplies it instead of a cover. No host-generated image or sidecar is needed.
 
 Light mode uses a white reading panel with no album bitmap. Dark mode blends
-the first 28 pixels of the cached album bitmap into the surrounding navy,
-removing the hard horizontal edge without per-frame blend work.
+the first 28 pixels of the screen-sized cached album bitmap into navy. Both
+the backdrop and reading panel crop this same 320 × 240 image using native
+screen-space bounds, avoiding a separate panel edge or mismatched gradient.
 
 The dark palette adapts [Afterburner](https://www.dexthemes.com/afterburner/dark):
-its lighter navigation navy `#162238` is the main background, `#0B1220` the
-sidebar, `#F2F7FF` the ink and `#39D0FF` the accent. Selection `#244058` and
+the main background is now a slightly lighter `#203049`, with `#162238` for the
+sidebar, `#F2F7FF` ink and `#39D0FF` accent. Selection `#244058` and
 border `#354762` are adaptations, not exact copies. Word-level karaoke remains
 unsupported; Sleep Timer is independent.
 
@@ -88,6 +96,8 @@ data. Names describe the observed behavior; they are not an Apple API contract.
 
 | Address | Role and evidence |
 | --- | --- |
+| `0x0882ab6c` | View resource `0x0dad0929` (file `0x83629c`) +`0x68`: original `NowPlaying_Idle_Background` COLR ID `0x0dad0851`. Replaced with an allocated private white COLR source so the Extra Info backdrop can be distinguished without modifying the actual idle clock. |
+| `0x08988974` → `0x0810012c` | BitmapView draw slot. The scoped hook handles only the private backdrop ID at view +`0x44`, in dark mode; all other draws call the untouched original. Native constructor `0x08265bf8` and background draw `0x08263530` establish the source-ID field. The image-source type at +`0x40` need not be COLR for a color-only view. |
 | `0x0816f704` | Player position getter. The UI proxy thunk at `0x082a02c8` calls it; the Now Playing elapsed-time property divides that result by 1,000 for seconds. |
 | `0x081eda2c` | Now Playing property getter, called with model, type, property and output pointer. String property `0x7f1b` returns cached UTF-8 extra-info text. |
 | `0x081efe74` | Model event handler. Event `0x80008` updates position properties; `0x80009` and `0x8000a` refresh the current track. |
@@ -180,10 +190,13 @@ Five bounded text buffers hold the neighboring groups; a separate 32-KiB
 buffer holds the complete plain fallback. If repeated timestamps expand beyond
 that bound, the original Apple text is preserved instead of truncating it.
 One cached background
-allocation is bounded to 153,628 bytes (the full 320 × 240 limit; the current
+allocation is 153,628 bytes (a shared 320 × 240 canvas; the reading
 panel is at most 140 pixels tall). Allocation is attempted once per track/size,
 not every frame. It is freed on track/size replacement, hide, destruction or
-fallback. Artwork pointers are borrowed only during synchronous sampling;
+fallback when owned by a timed lyric view. An ordinary-text-only backdrop may
+retain this one bounded cache until the next track/backdrop replacement. Native
+source graphics objects are destroyed before their borrowed pixel storage is freed.
+Artwork pointers are borrowed only during synchronous sampling;
 track replacement cannot leave a previous cover cached under the new generation.
 Native context clipping protects the surrounding UI. Malformed groups or
 unsupported panel geometry fall back to the ordinary text renderer.

@@ -55,8 +55,9 @@ embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment,
 eased scrolling/highlighting, and Settings → Lyrics controls for three text
 sizes, lyric color, dark-mode album backgrounds and keeping the screen awake.
 Light mode uses blue text on white; the lighter Afterburner-inspired dark theme
-uses a blurred multicolor album panel with a faded top edge. The original build
-was user-tested on an MB029; **these refinements still need hardware testing**.
+uses a continuous blurred multicolor background behind the album header and
+lyrics, with a native status strip. The light-mode refinement was user-tested
+on an MB029; **the latest dark-backdrop and scrolling changes still need hardware testing**.
 33 ms animation scheduling is not a measured device frame rate. The separate
 [Mac/browser lyrics lab](experiments/lyrics/README.md) remains a prototype.
 

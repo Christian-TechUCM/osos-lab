@@ -83,7 +83,7 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
         duration = n < 0 ? 0 : lrc->cues[n].milliseconds - lrc->cues[scene->cue].milliseconds;
         int64_t since = adjusted - lrc->cues[scene->cue].milliseconds;
         elapsed = since <= 0 ? 0 : since > UINT32_MAX ? UINT32_MAX : (uint32_t)since;
-        if (a) progress = ease(elapsed, duration && duration < 350 ? duration : 350);
+        if (a) progress = ease(elapsed, duration && duration < 500 ? duration : 500);
     }
     int h = scene->row[a].height;
     int top = (scene->height - h) / 2;
@@ -106,7 +106,7 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
         int start = previous_top + previous_height + 18;
         top += (start - top) * (int)(256 - progress) / 256;
     } else {
-        progress = scene->cue < 0 ? 0 : ease(elapsed, duration && duration < 350 ? duration : 350);
+        progress = scene->cue < 0 ? 0 : ease(elapsed, duration && duration < 500 ? duration : 500);
         top += (scene->height / 2 + 18 - top) * (int)(256 - progress) / 256;
         if (scene->cue >= 0 && progress < 256) interval = 33;
     }
@@ -119,6 +119,13 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
         unsigned strength = scene->cue < 0 ? 0 : i == a ? progress :
                             i + 1 == a ? 256 - progress : 0;
         scene->row[i].brightness = 180 + 70 * strength / 256;
+    }
+    /* Start sampling faster BEFORE a cue boundary, not up to 100 ms after it.
+     * Keep the idle interval between transitions to avoid needless redraws. */
+    int following = next(lrc, scene->cue);
+    if (following >= 0) {
+        int64_t remaining = (int64_t)lrc->cues[following].milliseconds - adjusted;
+        if (remaining > 0 && remaining <= 150) interval = 33;
     }
     return interval;
 }

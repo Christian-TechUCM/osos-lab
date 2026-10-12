@@ -3,8 +3,8 @@
 
 /* Afterburner-inspired: use its lighter navigation navy as our main surface.
  * Also read by patching/theme.py. See docs/lyrics-native.md for source. */
-#define CFW_THEME_BACKGROUND 0x162238u
-#define CFW_THEME_SIDEBAR 0x0b1220u
+#define CFW_THEME_BACKGROUND 0x203049u
+#define CFW_THEME_SIDEBAR 0x162238u
 #define CFW_THEME_INK 0xf2f7ffu
 #define CFW_THEME_ACCENT 0x39d0ffu
 /* Supporting roles adapted for readable small-screen selection and borders. */

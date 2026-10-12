@@ -116,13 +116,17 @@ int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out)
 
 void *cfw_lyrics_artwork(void)
 {
-    if (!lyrics.lrc.count || lyrics.model != model_get()) return 0;
+    /* The backdrop paints before the text child first loads its lyric tag. */
+    void *model = model_get();
+    if (!model) return 0;
     void *bitmap = 0;
     typedef int (*fn)(void *, uint32_t, uint32_t, void **);
-    if (!((fn)OSOS_NOW_PLAYING_PROPERTY)(lyrics.model, OSOS_RESOURCE_DRAW,
+    if (!((fn)OSOS_NOW_PLAYING_PROPERTY)(model, OSOS_RESOURCE_DRAW,
                                         OSOS_NOW_PLAYING_ARTWORK, &bitmap)) return 0;
     return bitmap;
 }
+
+uint32_t cfw_lyrics_generation(void) { return lyrics.generation; }
 
 void cfw_lyrics_menu(struct osos_context_menu *menu)
 {

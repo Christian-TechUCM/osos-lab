@@ -24,7 +24,7 @@ int main(void)
     assert(cfw_lyrics_scene_layout(&scene, &lrc, 0, 304, 140, 1, measure, 0));
     cfw_lyrics_scene_step(&scene, &lrc, 1000, 0);
     assert(scene.row[0].top == 88 && scene.row[0].brightness == 180);
-    cfw_lyrics_scene_step(&scene, &lrc, 1400, 0);
+    cfw_lyrics_scene_step(&scene, &lrc, 1500, 0);
     assert(scene.row[0].top == 58 && scene.row[0].brightness == 250);
     int incoming = scene.row[1].top;
     assert(cfw_lyrics_scene_layout(&scene, &lrc, 1, 304, 140, 1, measure, 0));
@@ -32,9 +32,9 @@ int main(void)
     assert(scene.row[1].top == incoming); /* no jump at cue boundary */
     int last = incoming;
     unsigned last_color = 180;
-    for (unsigned t = 3000; t <= 3350; t += 10) {
+    for (unsigned t = 3000; t <= 3500; t += 10) {
         unsigned interval = cfw_lyrics_scene_step(&scene, &lrc, t, 0);
-        assert(interval == (t < 3350 ? 33 : 100));
+        assert(interval == (t < 3500 ? 33 : 100));
         assert(scene.row[1].top <= last && scene.row[1].brightness >= last_color);
         last = scene.row[1].top; last_color = scene.row[1].brightness;
         cfw_lyrics_scene_step(&scene, &lrc, t, 0); /* paused clock: identical */
@@ -45,7 +45,7 @@ int main(void)
     assert(cfw_lyrics_scene_layout(&scene, &lrc, 2, 304, 140, 1, measure, 0));
     cfw_lyrics_scene_step(&scene, &lrc, 6000, 0);
     assert(scene.row[2].top == incoming);
-    cfw_lyrics_scene_step(&scene, &lrc, 6400, 0);
+    cfw_lyrics_scene_step(&scene, &lrc, 6500, 0);
     assert(scene.row[2].top == 12);
     cfw_lyrics_scene_step(&scene, &lrc, 9500, 0);
     assert(scene.row[2].top == -132); /* all of a tall cue can be read */

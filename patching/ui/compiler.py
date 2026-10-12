@@ -377,6 +377,10 @@ def compile_document(resources, document, text=""):
         compiled.string_ids[name] = resource_id = resources.allocate()
         resources.add("Str ", resource_id, text.encode("utf-8") + b"\0")
 
+    for name, rgb in document.colors.items():
+        compiled.string_ids[name] = resource_id = resources.allocate()
+        resources.add("COLR", resource_id, struct.pack("<I", rgb))
+
     if builder is not None:
         builder.insert_settings()
         compiled.string_ids.update(builder.string_ids)

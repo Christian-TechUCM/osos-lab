@@ -11,6 +11,7 @@ struct cfw_lyrics_snapshot {
 /* UI-thread-only borrowed snapshot. Never keep it across native event calls. */
 int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out);
 void *cfw_lyrics_artwork(void);
+uint32_t cfw_lyrics_generation(void);
 int cfw_lyrics_view_keep_awake(void);
 void cfw_lyrics_menu(struct osos_context_menu *menu);
 int cfw_lyrics_action(void *controller, const char *action, uint32_t argument);

@@ -248,9 +248,9 @@ int main(void)
             assert(drawn[3] == texts[i][3]);
         }
         cfw_dark_mode_clear_color(0x10000, 0x10000, 0x10000, 0x4321);
-        assert(clear_rgb[0] == (dark ? 0x16 * 0x10000 / 255 : 0x10000));
-        assert(clear_rgb[1] == (dark ? 0x22 * 0x10000 / 255 : 0x10000));
-        assert(clear_rgb[2] == (dark ? 0x38 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[0] == (dark ? 0x20 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[1] == (dark ? 0x30 * 0x10000 / 255 : 0x10000));
+        assert(clear_rgb[2] == (dark ? 0x49 * 0x10000 / 255 : 0x10000));
         assert(clear_alpha == 0x4321);
         assert(cfw_dark_mode_reflection_blend(0xabcd, 0xffff, 0x8000) == 0x1234);
         assert(blend_background == (dark ? CFW_THEME_RGB565(CFW_THEME_BACKGROUND) : 0xffffu));

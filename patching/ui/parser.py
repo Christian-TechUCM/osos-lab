@@ -73,6 +73,7 @@ class Parser:
                 "toggle",
                 "settings-entry",
                 "string",
+                "color",
                 "screen-event",
                 "music-entry",
             ),
@@ -84,6 +85,7 @@ class Parser:
         if (
             document.root is None
             and not document.strings
+            and not document.colors
             and not document.events
             and document.music_entry is None
         ):
@@ -133,6 +135,11 @@ class Parser:
         elif node.tag == "string":
             attributes(node, "id text")
             document.strings[self.identifier(node)] = node.attrib["text"]
+        elif node.tag == "color":
+            attributes(node, "id rgb")
+            document.colors[self.identifier(node)] = integer(
+                node, "rgb", minimum=0, maximum=0xFFFFFF
+            )
         elif node.tag == "screen-event":
             document.events.append(self.parse_screen_event(node))
         elif node.tag == "music-entry":

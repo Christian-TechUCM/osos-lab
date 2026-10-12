@@ -5,8 +5,9 @@
 #include "dark_mode.h"
 #include "theme.h"
 #include "patch.h"
+#include "lyrics_ui.h"
 
-/* Only the stock lyric TextView is replaced. No raw framebuffer writes: Apple's
+/* Only the lyric TextView and its private backdrop are replaced. Apple's
  * context applies the view/window clip and its existing font wraps UTF-8. */
 #define WORD(p, n) (*(uint32_t *)((unsigned char *)(p) + (n)))
 #define RECT(p, n) ((int32_t *)((unsigned char *)(p) + (n)))
@@ -22,6 +23,8 @@ static struct {
     uint32_t position, art_generation;
     int delay_ms, art_width, art_height;
     unsigned interval, armed, art_attempted;
+    unsigned armed_interval, objects_ready;
+    uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
     unsigned font, dark, color, artwork;
 } visual;
 static void *reading_view;
@@ -44,22 +47,35 @@ int cfw_lyrics_view_keep_awake(void)
     return reading_awake && cfw_lyrics_keep_awake();
 }
 
+static void free_background(void)
+{
+    if (visual.objects_ready) {
+        CALL0(OSOS_GRAPHICS_DESTROY, visual.source);
+        CALL0(OSOS_BITMAP_DESTROY, visual.bitmap);
+        visual.objects_ready = 0;
+    }
+    if (visual.background) CALL0(OSOS_IMPORT_FREE, visual.background);
+    visual.background = 0;
+}
+
 static void release(void *view)
 {
     if (visual.owner != view) return;
     /* Stop removes both the pending timer and its queued UI event. */
     CALL0(OSOS_TIMER_STOP, TIMER(view));
-    if (visual.background) CALL0(OSOS_IMPORT_FREE, visual.background);
+    free_background();
     visual.owner = visual.background = 0;
     visual.scene.valid = visual.armed = visual.art_attempted = 0;
 }
 
 static void arm(void *view, unsigned interval)
 {
-    if (visual.armed) return;
+    if (visual.armed && visual.armed_interval == interval) return;
+    if (visual.armed) CALL0(OSOS_TIMER_STOP, TIMER(view));
     ((void (*)(void *, uint32_t))OSOS_TIMER_SET_INTERVAL)(TIMER(view), interval);
     CALL0(OSOS_TIMER_START, TIMER(view));
     visual.armed = 1;
+    visual.armed_interval = interval;
 }
 
 static int panel_height(void *view)
@@ -100,8 +116,7 @@ static void make_background(uint32_t generation, int width, int height)
 {
     if (visual.art_attempted && visual.art_generation == generation &&
         visual.art_width == width && visual.art_height == height) return;
-    if (visual.background) CALL0(OSOS_IMPORT_FREE, visual.background);
-    visual.background = 0;
+    free_background();
     visual.art_attempted = 1;
     visual.art_generation = generation;
     visual.art_width = width;
@@ -137,9 +152,14 @@ static void make_background(uint32_t generation, int width, int height)
         return;
     }
     visual.background = data;
+    CALL0(OSOS_BITMAP_CONSTRUCT, visual.bitmap);
+    CALL0(OSOS_GRAPHICS_CONSTRUCT, visual.source);
+    osos_bitmap_load_resource(visual.bitmap, data);
+    osos_graphics_attach_bitmap(visual.source, visual.bitmap);
+    visual.objects_ready = 1;
 }
 
-static void draw_background(void *context, int32_t rect[4])
+static void draw_background(void *view, void *context, int32_t rect[4])
 {
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0);
     if (!visual.dark || !visual.artwork || !visual.background) {
@@ -149,18 +169,46 @@ static void draw_background(void *context, int32_t rect[4])
         ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
         return;
     }
-    /* Stack objects are aligned and destroyed before their backing BMap can
-     * be freed. Bitmap_LoadResource borrows pixels, it does not own them. */
-    uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
-    CALL0(OSOS_BITMAP_CONSTRUCT, bitmap);
-    CALL0(OSOS_GRAPHICS_CONSTRUCT, source);
-    osos_bitmap_load_resource(bitmap, visual.background);
-    osos_graphics_attach_bitmap(source, bitmap);
-    int32_t src[4] = {0, 0, visual.scene.height, visual.scene.width};
+    /* Native +0x80 bounds are screen-space; content_rect is local. Crop every
+     * child from the SAME screen-sized image so header/margins/panel meet.
+     * The native destination context continues to enforce clipping. */
+    int32_t src[4];
+    for (unsigned i = 0; i < 4; i++)
+        src[i] = rect[i] + RECT(view, 0x80)[i & 1];
+    if (src[0] < 0 || src[1] < 0 || src[2] > 240 || src[3] > 320) {
+        unsigned rgb = CFW_THEME_BACKGROUND;
+        unsigned char neutral[4] = {rgb >> 16, rgb >> 8, rgb, 255};
+        osos_graphics_set_color(context, neutral);
+        ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
+        return;
+    }
     ((void (*)(void *, void *, const void *, const void *, unsigned, unsigned))OSOS_GRAPHICS_BLIT)
-        (context, source, src, rect, 255, 0);
-    CALL0(OSOS_GRAPHICS_DESTROY, source);
-    CALL0(OSOS_BITMAP_DESTROY, bitmap);
+        (context, visual.source, src, rect, 255, 0);
+}
+
+PATCH_ARM void cfw_lyrics_backdrop_draw(void *view, void *argument, void *clip)
+{
+    /* The stock color-only BitmapView uses +0x44 for its background COLR
+     * regardless of the image-source type at +0x40 (which may be empty). */
+    if (WORD(view, 0x44) != CFW_LYRICS_BACKDROP || !cfw_dark_mode_enabled()) {
+        ((void (*)(void *, void *, void *))OSOS_BITMAP_VIEW_DRAW)(view, argument, clip);
+        return;
+    }
+    unsigned flags = WORD(view, 0x48);
+    /* Match the two stock BitmapView draw-suppression guards exactly. */
+    if (((flags & 0x10000000) && !(flags & 8)) ||
+        ((flags & 0x20000000) && (flags & 8))) return;
+    int32_t rect[4];
+    ((void (*)(void *, void *))OSOS_VIEW_CONTENT_RECT)(view, rect);
+    if (rect[2] <= rect[0] || rect[3] <= rect[1]) return;
+    visual.dark = 1;
+    visual.artwork = cfw_lyrics_album_background();
+    if (visual.artwork) make_background(cfw_lyrics_generation(), 320, 240);
+    uint32_t context[0x44 / 4];
+    CALL0(OSOS_GRAPHICS_CONSTRUCT, context);
+    ((void (*)(void *, void *))OSOS_VIEW_DRAW_CONTEXT)(view, context);
+    draw_background(view, context, rect);
+    CALL0(OSOS_GRAPHICS_DESTROY, context);
 }
 
 PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
@@ -210,8 +258,8 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     visual.dark = cfw_dark_mode_enabled();
     visual.color = cfw_lyrics_color();
     visual.artwork = cfw_lyrics_album_background();
-    if (visual.dark && visual.artwork) make_background(snapshot.generation, width, height);
-    draw_background(context, rect);
+    if (visual.dark && visual.artwork) make_background(snapshot.generation, 320, 240);
+    draw_background(view, context, rect);
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0x21);
     for (unsigned i = 0; i < scene->rows; i++) {
         struct cfw_lyrics_row *row = &scene->row[i];
@@ -251,7 +299,7 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
             return 1;
         }
         struct cfw_lyrics_snapshot snapshot;
-        unsigned interval = 100;
+        unsigned interval = 33; /* a new cue must not inherit the idle 100 ms poll */
         int changed = 1;
         if (cfw_lyrics_snapshot(&snapshot) && visual.scene.generation == snapshot.generation &&
             visual.scene.cue == cfw_lrc_current(snapshot.lrc, snapshot.position, snapshot.delay_ms)) {

@@ -40,6 +40,21 @@ def menu(rows):
 
 
 class UiTests(unittest.TestCase):
+    def test_private_backdrop_color_is_allocated_and_exported(self):
+        document = parser.parse('<ui><color id="BACKDROP" rgb="0xffffff"/></ui>')
+        resources = Resources([], {})
+        compiled = compile_document(resources, document)
+        rid = compiled.string_ids["BACKDROP"]
+        self.assertEqual(resources.added["COLR", rid].data, b"\xff\xff\xff\0")
+        self.assertIn("BACKDROP", emit_header(document, compiled.string_ids))
+        for value in ("-1", "0x1000000", "blue"):
+            with self.assertRaises(ValueError):
+                parser.parse(f'<ui><color id="BAD" rgb="{value}"/></ui>')
+        with self.assertRaises(ValueError):
+            parser.parse(
+                '<ui><color id="SAME" rgb="0"/><string id="SAME" text=""/></ui>'
+            )
+
     def test_lyrics_settings_coexist_with_dark_mode_and_preserve_stock(self):
         root = Path(__file__).resolve().parents[2]
         metadata = json.loads((root / "firmware/ui.json").read_text())

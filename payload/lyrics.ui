@@ -1,5 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 <ui>
+  <!-- A private source identifies only the Extra Info backdrop, not the idle clock. -->
+  <color id="CFW_LYRICS_BACKDROP" rgb="0xffffff"/>
   <string id="CFW_LYRICS_LABEL" text="Live Lyrics"/>
   <string id="CFW_LYRICS_EARLIER" text="Lyrics: 0.1s earlier"/>
   <string id="CFW_LYRICS_LATER" text="Lyrics: 0.1s later"/>
