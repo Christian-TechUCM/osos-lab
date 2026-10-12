@@ -190,6 +190,36 @@ unsupported panel geometry fall back to the ordinary text renderer.
 
 ## Validation and remaining checks
 
+### Refinement candidate (2026-10-11, source `237a756`)
+
+[CI run 38203200176](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38203200176)
+passed the 123 Python test cases (one skipped), 93 Rust tests (four ignored),
+four JavaScript tests, lint/format checks, ARM GCC 9.5.0 compilation, reserved
+payload-size checks and packaging. CI labels its PR-merge build
+`0.0.0-dev+f6cccfda`; the feature-branch source is `237a756`.
+New sanitized fixtures exercise preference corruption/short writes/retry,
+all lyric choices, awake-view lifetime, both display-power dispatch bases,
+non-inactivity event forwarding, zero/one-line parent geometry, light-mode
+artwork exclusion, cached wrapping, and bounded complete-text fallback.
+
+Offline assembly against the pinned original succeeded: 11,617,536 bytes,
+89 checked preimages. Independent inspection verified nine distinct native
+hook targets, the original destructor trampoline, and the fallback font word.
+The installer ZIP passed archive integrity checks.
+
+- OSOS SHA-256: `da04e3b6dbe3dec0f7df2c4c8fbcd273fd3d36da0fafa190856d3fb8705778cb`
+- ZIP SHA-256: `a8cf39cb1634154db3af4e9d2c7e9af24b932d00ccc03656ab85dea507df5732`
+
+No iPod files, firmware, or boot flash were changed during this refinement.
+The new image is **not hardware-validated**. Before treating it as stable,
+test LOKERA on first entry and after track changes; seek/pause; all font/color
+settings and persistence after reboot; light/dark transitions; staying in
+lyrics beyond the configured backlight timeout; normal timeout after leaving;
+manual power-off; Sleep Timer expiry; and playback without stutters during
+scrolling. The old working build and original backup must remain available.
+
+### Previous baseline
+
 Host tests compile the actual payload parser and mocked native hooks under
 AddressSanitizer and UndefinedBehaviorSanitizer. They cover track replacement,
 seeking, paused position, timing clamps, missing and malformed tags, UTF-8,
