@@ -31,6 +31,14 @@ class ScreenEvent:
 
 
 @dataclass
+class LayoutEvent:
+    layout: str | int
+    event: str
+    handler: str
+    replaces: str
+
+
+@dataclass
 class Document:
     root: Item | None
     values: dict[str, Values]
@@ -41,6 +49,7 @@ class Document:
     strings: dict[str, str] = field(default_factory=dict)
     colors: dict[str, int] = field(default_factory=dict)
     events: list[ScreenEvent] = field(default_factory=list)
+    layout_events: list[LayoutEvent] = field(default_factory=list)
     music_entry: dict[str, str] | None = None
 
 

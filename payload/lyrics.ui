@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 <ui>
-  <!-- A private source identifies only the Extra Info backdrop, not the idle clock. -->
+  <!-- Keep a private white light-mode color; native instance IDs scope drawing. -->
   <color id="CFW_LYRICS_BACKDROP" rgb="0xffffff"/>
   <string id="CFW_LYRICS_LABEL" text="Live Lyrics"/>
   <string id="CFW_LYRICS_EARLIER" text="Lyrics: 0.1s earlier"/>
@@ -10,4 +10,7 @@
   <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsEarlier" handler="CFW_LyricsEarlier"/>
   <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsLater" handler="CFW_LyricsLater"/>
   <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsReset" handler="CFW_LyricsReset"/>
+  <!-- Stock leaves the lyric wheel unassigned. Its ready layout also suppresses
+       the volume-change overlay; loading/failed layouts must remain stock. -->
+  <layout-event layout="0x0dad0974" event="wheel" replaces="" handler="CFW_LyricsVolume"/>
 </ui>

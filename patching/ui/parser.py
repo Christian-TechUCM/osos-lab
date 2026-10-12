@@ -5,7 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from .model import Document, Item, ScreenEvent, Values
+from .model import Document, Item, LayoutEvent, ScreenEvent, Values
 
 
 def attributes(node, required="", optional="", children=()):
@@ -75,6 +75,7 @@ class Parser:
                 "string",
                 "color",
                 "screen-event",
+                "layout-event",
                 "music-entry",
             ),
         )
@@ -87,6 +88,7 @@ class Parser:
             and not document.strings
             and not document.colors
             and not document.events
+            and not document.layout_events
             and document.music_entry is None
         ):
             raise ValueError("Incomplete UI declaration")
@@ -142,6 +144,18 @@ class Parser:
             )
         elif node.tag == "screen-event":
             document.events.append(self.parse_screen_event(node))
+        elif node.tag == "layout-event":
+            attributes(node, "layout event handler replaces")
+            if not node.attrib["event"] or not node.attrib["handler"]:
+                raise ValueError("Layout events require an event and handler")
+            document.layout_events.append(
+                LayoutEvent(
+                    resource_reference(node.attrib["layout"]),
+                    node.attrib["event"],
+                    node.attrib["handler"],
+                    node.attrib["replaces"],
+                )
+            )
         elif node.tag == "music-entry":
             attributes(node, "id title after screen layout open highlight")
             if document.music_entry is not None:

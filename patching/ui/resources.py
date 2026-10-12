@@ -141,6 +141,56 @@ def serialized_string(value):
     return struct.pack("<I", len(data)) + data
 
 
+def direct_event(event, handler):
+    return (
+        serialized_string(event)
+        + b"1"
+        + serialized_string(handler)
+        + struct.pack("<I", 0)
+    )
+
+
+def event_ranges(data):
+    """Walk the native event table without materializing proprietary strings."""
+    position = 4
+
+    def skip_string():
+        nonlocal position
+        size = word(data, position)
+        position += 4 + size
+        if position > len(data):
+            raise ValueError("Truncated UI event string")
+
+    for _ in range(word(data, 0)):
+        start = position
+        skip_string()
+        position += 1  # native enabled byte
+        skip_string()
+        actions = word(data, position)
+        position += 4
+        for _ in range(actions):
+            skip_string()
+            arguments = word(data, position)
+            position += 4
+            for _ in range(arguments):
+                skip_string()
+        yield start, position
+    if position != len(data):
+        raise ValueError("Unexpected UI event table length")
+
+
+def matches_event(data, start, end, encoded):
+    if end - start != len(encoded):
+        return False
+    # Records are at least 13 bytes; overlapping final word avoids reading
+    # beyond the resource while preserving exact, fail-closed preconditions.
+    offsets = [*range(0, len(encoded) - 3, 4), len(encoded) - 4]
+    return all(
+        word(data, start + i) == struct.unpack_from("<I", encoded, i)[0]
+        for i in offsets
+    )
+
+
 def menu_event(item, event, handler, action, arguments):
     return (
         serialized_string(f"list.pid.{item}.{event}")
@@ -208,6 +258,23 @@ class Resources:
         )
         for _, layout in blocks(self.original["SLst", self.native(binding.screen)]):
             self.extend_events("SEVT", word(layout, 0), [encoded])
+
+    def replace_layout_event(self, binding):
+        resource_id = self.native(binding.layout)
+        data = self.current("SEVT", resource_id)
+        expected = direct_event(binding.event, binding.replaces)
+        matches = [
+            (start, end)
+            for start, end in event_ranges(data)
+            if matches_event(data, start, end, expected)
+        ]
+        if len(matches) != 1:
+            raise ValueError("Expected exactly one matching stock layout event")
+        start, end = matches[0]
+        updated = data[:start]
+        updated.extend(direct_event(binding.event, binding.handler))
+        updated.extend(data[end:])
+        self.replace("SEVT", resource_id, updated)
 
     def source(self, text, string_id=None):
         if string_id is None:

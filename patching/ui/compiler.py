@@ -362,6 +362,8 @@ def compile_document(resources, document, text=""):
         compile_music_entry(resources, document.music_entry, compiled)
     for binding in document.events:
         resources.bind_screen_event(binding)
+    for binding in document.layout_events:
+        resources.replace_layout_event(binding)
     builder = None
     if document.root:
         builder = DocumentCompiler(resources, document)

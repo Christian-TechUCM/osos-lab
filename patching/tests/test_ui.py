@@ -11,10 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from patching.ui import parser
 from patching.ui.codegen import emit_header
 from patching.ui.compiler import DocumentCompiler, compile_document
-from patching.ui.model import ScreenEvent
+from patching.ui.model import LayoutEvent, ScreenEvent
 from patching.ui.resources import (
+    Resource,
     Resources,
     blocks,
+    direct_event,
     event,
     pack_blocks,
     word,
@@ -90,7 +92,17 @@ class UiTests(unittest.TestCase):
             key = "SEVT", word(layout, 0)
             original = resources.stock(*key)
             updated = resources.added[key]
-            self.assertEqual(updated[4 : len(original)].data, original[4:].data)
+            if key[1] == 0x0DAD0974:
+                end = len(original) - len(direct_event("wheel", ""))
+                self.assertEqual(updated[4:end].origins, original[4:end].origins)
+                replacement = direct_event("wheel", "CFW_LyricsVolume")
+                self.assertEqual(
+                    updated[end : end + len(replacement)].data, replacement
+                )
+            else:
+                self.assertEqual(
+                    updated[4 : len(original)].origins, original[4:].origins
+                )
             for action in (
                 "SleepTimer",
                 "Lyrics",
@@ -311,6 +323,36 @@ class UiTests(unittest.TestCase):
         self.assertIn("FIRST = 0", header)
         self.assertIn("SECOND = 1", header)
         self.assertIn("TEST_FIELDS = 2", header)
+
+    def test_layout_event_replaces_exactly_one_record_and_preserves_neighbors(self):
+        document = parser.parse(
+            '<ui><layout-event layout="20" event="wheel" replaces="" '
+            'handler="Volume"/></ui>'
+        )
+        menu = event("button.menu.up", "navigator.PopTopScreen")
+        wheel = direct_event("wheel", "")
+        play = direct_event("button.playpause.up", "HandlePlayPause")
+        resources = Resources([])
+        stock = struct.pack("<I", 3) + menu + wheel + play
+        resources.original = {("SEVT", 20): Resource(stock)}
+        resources.replace_layout_event(document.layout_events[0])
+        self.assertEqual(
+            resources.added["SEVT", 20].data,
+            struct.pack("<I", 3) + menu + direct_event("wheel", "Volume") + play,
+        )
+        self.assertEqual(resources.original["SEVT", 20].data, stock)
+        # Fail closed on an unexpected handler, duplicate, or malformed table.
+        with self.assertRaises(ValueError):
+            resources.replace_layout_event(document.layout_events[0])
+        for invalid in (
+            struct.pack("<I", 2) + wheel + wheel,
+            struct.pack("<I", 1) + wheel[:-1],
+            struct.pack("<I", 1) + wheel + b"extra",
+        ):
+            resources.added.clear()
+            resources.original["SEVT", 20] = Resource(invalid)
+            with self.assertRaises(ValueError):
+                resources.replace_layout_event(LayoutEvent(20, "wheel", "Volume", ""))
 
     def test_invalid_declarations_fail_before_resource_generation(self):
         cases = [

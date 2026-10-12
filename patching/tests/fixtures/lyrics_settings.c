@@ -50,7 +50,7 @@ void cfw_ui_status(const struct cfw_ui_action *action, unsigned value) {
 
 static void defaults(void) {
     assert(cfw_lyrics_font() == 1 && cfw_lyrics_color() == 0);
-    assert(cfw_lyrics_album_background() == 1 && cfw_lyrics_keep_awake() == 1);
+    assert(cfw_lyrics_album_background() == 0 && cfw_lyrics_keep_awake() == 1);
 }
 int main(void) {
     cfw_lyrics_settings_load(); defaults();
@@ -62,6 +62,8 @@ int main(void) {
     assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_00_02", 0));
     assert(cfw_lyrics_font() == 2 && writes == 1 && redraws == 1 && marks == 2 && !status);
     cfw_lyrics_settings_load(); assert(cfw_lyrics_font() == 2);
+    assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_02_01", 0));
+    cfw_lyrics_settings_load(); assert(cfw_lyrics_album_background() == 1); /* preserve v1 On */
     assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_01_03", 0));
     assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_02_00", 0));
     assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_03_00", 0));

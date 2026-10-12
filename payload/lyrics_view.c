@@ -24,6 +24,7 @@ static struct {
     int delay_ms, art_width, art_height;
     unsigned interval, armed, art_attempted;
     unsigned armed_interval, objects_ready;
+    unsigned refresh_screen;
     uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
     unsigned font, dark, color, artwork;
 } visual;
@@ -66,6 +67,18 @@ static void release(void *view)
     free_background();
     visual.owner = visual.background = 0;
     visual.scene.valid = visual.armed = visual.art_attempted = 0;
+}
+
+static void leave_reading_view(void *view)
+{
+    if (reading_view != view) return;
+    reading_awake = 0;
+    reading_view = 0;
+    /* Untimed fallback may have a cached backdrop without an animated owner. */
+    if (!visual.owner) {
+        free_background();
+        visual.art_attempted = 0;
+    }
 }
 
 static void arm(void *view, unsigned interval)
@@ -188,9 +201,19 @@ static void draw_background(void *view, void *context, int32_t rect[4])
 
 PATCH_ARM void cfw_lyrics_backdrop_draw(void *view, void *argument, void *clip)
 {
-    /* The stock color-only BitmapView uses +0x44 for its background COLR
-     * regardless of the image-source type at +0x40 (which may be empty). */
-    if (WORD(view, 0x44) != CFW_LYRICS_BACKDROP || !cfw_dark_mode_enabled()) {
+    /* The descriptor's COLR is resolved into RGBA at +0x90 on construction.
+     * +0x44 is an independent image source, NOT that color ID. Select by the
+     * stable native instance ID instead. Only recolor the shared status strip
+     * while the visible lyric view belongs to the same native window. */
+    unsigned id = WORD(view, 0x4c);
+    int backdrop = id == OSOS_LYRICS_BACKDROP_VIEW_ID;
+    if (!backdrop && id == OSOS_STATUS_BACKDROP_VIEW_ID && reading_view &&
+        visible(reading_view)) {
+        typedef void *(*window_fn)(void *);
+        void *window = ((window_fn)OSOS_VIEW_WINDOW)(view);
+        backdrop = window && window == ((window_fn)OSOS_VIEW_WINDOW)(reading_view);
+    }
+    if (!backdrop || !cfw_dark_mode_enabled()) {
         ((void (*)(void *, void *, void *))OSOS_BITMAP_VIEW_DRAW)(view, argument, clip);
         return;
     }
@@ -221,9 +244,11 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     if (!selected(view) || !visible(view) || (WORD(view, 0xf0) & 0x40)) goto stock;
     /* Native events invalidate the source; animation frames reuse its copied
      * LRC instead of repeatedly scanning/loading the entire metadata tag. */
-    if (visual.owner != view || !cfw_lyrics_snapshot(&snapshot))
+    int have_snapshot = visual.owner == view && cfw_lyrics_snapshot(&snapshot);
+    if (!have_snapshot) {
         CALL0(OSOS_TEXT_VIEW_LOAD, view);
-    if (!cfw_lyrics_snapshot(&snapshot)) goto stock;
+        if (!cfw_lyrics_snapshot(&snapshot)) goto stock;
+    }
     int panel = panel_height(view);
     if (!panel) goto stock;
     size_panel(view, panel);
@@ -234,6 +259,7 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     if (visual.owner != view) {
         if (visual.owner) release(visual.owner);
         visual.owner = view;
+        visual.refresh_screen = 1;
     }
     void *context = CONTEXT(view);
     unsigned font = cfw_lyrics_font();
@@ -247,6 +273,7 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     ((void (*)(void *, void *))OSOS_VIEW_DRAW_CONTEXT)(view, context);
     int cue = cfw_lrc_current(snapshot.lrc, snapshot.position, snapshot.delay_ms);
     struct cfw_lyrics_scene *scene = &visual.scene;
+    if (scene->generation != snapshot.generation) visual.refresh_screen = 1;
     if (!scene->valid || scene->generation != snapshot.generation || scene->cue != cue ||
         scene->width != width || scene->height != height) {
         if (!cfw_lyrics_scene_layout(scene, snapshot.lrc, cue, width, height,
@@ -294,7 +321,7 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
         if (visual.owner != view) return 1; /* stale event: do not start stock blinking */
         visual.armed = 0;
         if (!visible(view)) {
-            if (reading_view == view) { reading_awake = 0; reading_view = 0; }
+            leave_reading_view(view);
             release(view);
             return 1;
         }
@@ -315,20 +342,26 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
                 if (top[i] != visual.scene.row[i].top || color[i] != visual.scene.row[i].brightness) changed = 1;
             if (snapshot.position == visual.position && snapshot.delay_ms == visual.delay_ms) interval = 100;
         }
-        if (changed)
+        /* The backdrop/status draw precedes the first lyric draw. Schedule a
+         * single complete repaint once the tag, artwork and visible view are
+         * known, rather than leaving the header's initial fallback cached. */
+        if (visual.refresh_screen) {
+            visual.refresh_screen = 0;
+            osos_ui_invalidate();
+        } else if (changed)
             ((void (*)(void *, const void *))OSOS_VIEW_INVALIDATE_RECT)(view, RECT(view, 0x80));
         arm(view, interval);
         return 1;
     }
     int result = ((int (*)(void *, const void *))OSOS_TEXT_VIEW_EVENT)(view, event);
     /* Let the native property handler refresh before the next draw. */
-    if (visual.owner == view && event[1] != 15) CALL0(OSOS_TEXT_VIEW_LOAD, view);
+    if (visual.owner == view && event[1] == 19) CALL0(OSOS_TEXT_VIEW_LOAD, view);
     return result;
 }
 
 PATCH_ARM void cfw_lyrics_view_visibility(void *view, unsigned shown)
 {
-    if (reading_view == view) { reading_awake = 0; reading_view = 0; }
+    leave_reading_view(view);
     release(view);
     ((void (*)(void *, unsigned))OSOS_TEXT_VIEW_VISIBILITY)(view, shown);
 }
@@ -336,7 +369,7 @@ PATCH_ARM void cfw_lyrics_view_visibility(void *view, unsigned shown)
 void *cfw_lyrics_view_destroy_original(void *view);
 PATCH_ARM void *cfw_lyrics_view_destroy(void *view)
 {
-    if (reading_view == view) { reading_awake = 0; reading_view = 0; }
+    leave_reading_view(view);
     release(view);
     return cfw_lyrics_view_destroy_original(view);
 }

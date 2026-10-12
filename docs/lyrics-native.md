@@ -8,8 +8,11 @@ the browser preview. The user installed the previous `56538c3` build on their
 MB029 and reported working playback/lyrics. Their hardware photos exposed
 layout, contrast, screen-idle and scrolling issues. The subsequent `237a756`
 file update booted: the user reported excellent light-mode rendering, but dark
-mode photos exposed a white header behind white text. The follow-up below is
-**not yet installed or verified on the iPod**.
+mode photos exposed a white header behind white text. Build `716321b` restored
+readable header text, but the user still observed a boxed backdrop and lag.
+The subsequent fixes described here are **local changes, not installed or
+verified on the iPod**. The clickwheel volume fix has an identified missing
+binding; the reported play/pause/next/previous failure remains unresolved.
 
 ## Controls and limitations
 
@@ -27,9 +30,11 @@ It is not saved to disk. Seek and pause behavior follow the player position,
 not elapsed wall time.
 
 Settings → Lyrics offers Small / Medium / Large text, Automatic / Blue / Cyan /
-Purple / Gold lyric color, Album background (dark), and Keep screen awake.
-Defaults are Medium, Automatic, On, On. Automatic means blue on white in light
-mode and near-white on album color in dark mode. The other colors use separate
+Purple / Gold lyric color, Background (dark): Solid navy / Album artwork, and
+Keep screen awake. Defaults are Medium, Automatic, Solid navy, On. Existing
+saved artwork choices remain valid and are preserved; select Solid navy manually
+to compare performance on an already-configured iPod. Automatic means blue on
+white in light mode and near-white on the chosen dark background. The other colors use separate
 light/dark variants for contrast. Apple's font renderer handles wrapping and character support; the
 lyric renderer positions up to five cue groups inside the existing reading
 panel. Header, album thumbnail, navigation and playback controls remain native.
@@ -47,6 +52,10 @@ The cached native bitmap/context now live alongside their pixel allocation,
 instead of being constructed and destroyed on every text frame. Polling switches
 to 33 ms within 150 ms before the next cue; entering a transition also replaces
 an already-armed 100 ms idle timer rather than waiting for it to expire.
+Each draw now reads the playback snapshot once rather than twice; non-property
+input events no longer trigger redundant native text loading. These changes
+reduce work, but do not establish an on-device frame-rate improvement. Compare
+the same song, font size and cue transitions with the two background settings.
 
 The reading panel reserves 140 pixels independently of its auto-sized parent's
 initial bounds. This removes a one-line/empty-parent measurement feedback loop.
@@ -57,17 +66,43 @@ must still be rechecked on hardware; the photos alone cannot prove the cause.
 Artwork is sampled spatially into a 16 × 12 RGB grid, blurred with three box
 passes, darkened and expanded into a cached RGB565 bitmap. Bounded ordered
 dithering reduces gradient banding on the 16-bit display. Different regions of
-the cover contribute different colors. The backdrop now covers the full Extra
-Info content area, including album/artist header and side margins. The native
-status/navigation strip remains in place. It is static per track, not Apple's animated
+the cover contribute different colors. The backdrop is intended to cover the
+full screen, including album/artist header, margins and status strip. The status
+strip is overridden only while a visible lyric view belongs to the same native
+window. Icons and text remain native. It is static per track, not Apple's animated
 fluid effect. Missing or unsupported bitmaps and allocation failures use the
 theme's navy base color; Apple's placeholder can be sampled when the model
 supplies it instead of a cover. No host-generated image or sidecar is needed.
 
-Light mode uses a white reading panel with no album bitmap. Dark mode blends
-the first 28 pixels of the screen-sized cached album bitmap into navy. Both
-the backdrop and reading panel crop this same 320 × 240 image using native
-screen-space bounds, avoiding a separate panel edge or mismatched gradient.
+Light mode uses a white reading panel with no album bitmap. In dark artwork
+mode the backdrop, status strip and reading panel crop the same 320 × 240 image
+using native screen-space bounds. The previous forced navy top band was removed.
+After the first lyric draw or a track-generation change, one complete repaint
+refreshes the header that was drawn before the lyric tag loaded. Animation
+continues to invalidate only the lyric view, not the whole screen.
+
+## Physical clickwheel controls
+
+The pinned native `SEVT` table for ExtraInfo (`0x0dad0974`) has an empty `wheel`
+handler. The compiler now replaces exactly that record with `CFW_LyricsVolume`, rejecting missing/duplicate or
+unexpected records. Other events and their template provenance are preserved.
+The handler calls Apple's volume-wheel routine `0x0820d3e4`, preserving its
+decoding, volume-limit and acknowledgement behavior, then stops the overlay
+timeout at controller `+0xb8` so it does not leave lyrics four seconds later.
+The native volume notification handler `0x082146c0` already suppresses its
+overlay for ready ExtraInfo layout `0x0dad0974` (literal at `0x0821476c`).
+Loading/failed layouts and the loading timer at `+0xe0` are untouched. Support
+queries are inert.
+
+The stock tables already bind play/pause, next, previous, Menu, Center and
+long-press seeking. Their handlers and event propagation are retained, not
+duplicated with speculative raw-button hooks. The user reports Menu/Center
+still respond. A hardware comparison is still needed to determine why playback
+buttons fail: test those buttons before entering lyrics, while showing lyrics,
+and immediately after leaving, including whether delayed presses eventually
+execute. Do not describe this part as fixed based on the volume change.
+
+Earbud inline controls are a separate hardware path; see [the investigation](earpods-remote.md).
 
 The dark palette adapts [Afterburner](https://www.dexthemes.com/afterburner/dark):
 the main background is now a slightly lighter `#203049`, with `#162238` for the
@@ -89,6 +124,13 @@ or animation callbacks.
 
 ## Verified firmware bindings
 
+Local validation for the current changes: 45 patching tests pass (including
+ASan/UBSan native fixtures); 49 tools tests pass with one skipped; Ruff and
+format checks pass. Four changed C units also compile as freestanding ARM926
+objects with Clang. Regenerated UI structure metadata matches the pinned
+private image. This is **not** a linked/packaged release: the required GCC 9.5
+release build and on-device performance/input tests remain outstanding.
+
 The supported plaintext input is `osos.bin`, 10,634,496 bytes, SHA-256
 `660eb6ff5f498bb1a75e85f1f9921bf0c753525a8bca9b4fa47ed260e5ad0f1e`.
 Addresses below were checked against that image's ARM instructions and resource
@@ -96,8 +138,10 @@ data. Names describe the observed behavior; they are not an Apple API contract.
 
 | Address | Role and evidence |
 | --- | --- |
-| `0x0882ab6c` | View resource `0x0dad0929` (file `0x83629c`) +`0x68`: original `NowPlaying_Idle_Background` COLR ID `0x0dad0851`. Replaced with an allocated private white COLR source so the Extra Info backdrop can be distinguished without modifying the actual idle clock. |
-| `0x08988974` → `0x0810012c` | BitmapView draw slot. The scoped hook handles only the private backdrop ID at view +`0x44`, in dark mode; all other draws call the untouched original. Native constructor `0x08265bf8` and background draw `0x08263530` establish the source-ID field. The image-source type at +`0x40` need not be COLR for a color-only view. |
+| `0x0882ab6c` | View resource `0x0dad0929` (file `0x83629c`) +`0x68`: original `NowPlaying_Idle_Background` COLR ID `0x0dad0851`. Replaced with a private white COLR for light mode, without modifying the actual idle clock. This color ID is **not** the instance selector. |
+| `0x08988974` → `0x0810012c` | BitmapView draw slot. The hook selects Extra Info instance ID `0x0dad092a` at view `+0x4c`, and shared status instance `0x0dad01a2` only in the same window as visible lyrics. Other views/light mode forward unchanged. |
+| `0x081943ec`, `0x0829b090`, `0x08265bf8` | Descriptor construction: descriptor `+0x30` → options `+0x10` → view `+0x4c` is the instance ID. Descriptor color `+0x5c` resolves into RGBA at view `+0x90`. The old test of view `+0x44` was incorrect: that is the independent image-property source. |
+| `0x08299080` | Resolves a view's owning window for status-strip scoping. |
 | `0x0816f704` | Player position getter. The UI proxy thunk at `0x082a02c8` calls it; the Now Playing elapsed-time property divides that result by 1,000 for seconds. |
 | `0x081eda2c` | Now Playing property getter, called with model, type, property and output pointer. String property `0x7f1b` returns cached UTF-8 extra-info text. |
 | `0x081efe74` | Model event handler. Event `0x80008` updates position properties; `0x80009` and `0x8000a` refresh the current track. |

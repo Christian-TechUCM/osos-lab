@@ -142,6 +142,17 @@ void cfw_lyrics_menu(struct osos_context_menu *menu)
 
 int cfw_lyrics_action(void *controller, const char *action, uint32_t argument)
 {
+    if (cfw_string_equal(action, "CFW_LyricsVolume")) {
+        if (argument == OSOS_ACTION_SUPPORT_QUERY) return 1;
+        if (!controller || !argument) return 1;
+        /* Keep Apple's wheel decoding, volume limit and acknowledgement logic.
+         * Its 4-second overlay timer would leave lyrics; stop only that timer,
+         * not the separate Extra Info loading timer at controller +0xe0. */
+        ((int (*)(void *, uint32_t))OSOS_NOW_PLAYING_WHEEL_VOLUME)(controller, argument);
+        void *timer = *(void **)((unsigned char *)controller + 0xb8);
+        if (timer) ((void (*)(void *))OSOS_TIMER_STOP)(timer);
+        return 1;
+    }
     int want_show = cfw_string_equal(action, "CFW_Lyrics");
     int earlier = cfw_string_equal(action, "CFW_LyricsEarlier");
     int later = cfw_string_equal(action, "CFW_LyricsLater");

@@ -4,7 +4,7 @@
 #include "preferences.h"
 #include "cfw.h"
 
-static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 1, 1};
+static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 0, 1};
 static unsigned save_status;
 static const struct osos_path path = {0, "iPod_Control\\Device\\CFWLyrics"};
 struct record { uint32_t magic, version, values[CFW_LYRICSSETTINGS_FIELDS], checksum; };

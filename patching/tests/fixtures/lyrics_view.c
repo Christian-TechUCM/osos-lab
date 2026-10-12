@@ -9,7 +9,10 @@
 #define CFW_PATCH_H
 #define PATCH_ARM
 
-static unsigned char view[0x240], parent[0x180], art[0xb8], unrelated[0x240], backdrop[0x240];
+static unsigned char view[0x240], parent[0x180], art[0xb8], unrelated[0x240], backdrop[0x240], status[0x240];
+static int screen_invalidations, different_window;
+static void invalidate_screen(void) { screen_invalidations++; }
+static void *get_window(void *p) { return p == status && different_window ? unrelated : parent; }
 static int enabled = 1, artwork_enabled = 1, oom, allocs, frees, samples, starts, stops;
 static int stock_draws, stock_events, stock_measures, stock_shown, destroyed, invalidations;
 static int text_draws, blits, fills, loaded, constructors, destructors, bitmap_draws;
@@ -17,7 +20,7 @@ static int32_t last_source[4];
 static unsigned interval;
 static void *timer_owner;
 static unsigned setting_font = 1, setting_color, setting_art = 1, setting_awake = 1;
-static int dark = 1, font_sets, measurements;
+static int dark = 1, font_sets, measurements, snapshots;
 unsigned cfw_lyrics_font(void) { return setting_font; }
 unsigned cfw_lyrics_color(void) { return setting_color; }
 unsigned cfw_lyrics_album_background(void) { return setting_art; }
@@ -30,7 +33,7 @@ static void set_font(void *p, void *service, uint32_t font, int invalid) {
     assert(font == 0x0dad0013 || font == 0x0dad0012 || font == 0x0dad001e); font_sets++;
 }
 static struct cfw_lyrics_snapshot snap;
-int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out) { *out = snap; return enabled; }
+int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out) { snapshots++; *out = snap; return enabled; }
 uint32_t cfw_lyrics_generation(void) { return snap.generation; }
 void *cfw_lyrics_artwork(void) { return artwork_enabled ? art : 0; }
 static void native_load(void *p) { assert(p == view || p == unrelated); loaded++; }
@@ -46,8 +49,8 @@ static void set_interval(void *p, uint32_t n) { assert(p == timer_owner && (n ==
 static void *allocate(uint32_t n) { allocs++; assert(n <= 153628); return oom ? 0 : calloc(1, n); }
 static void deallocate(void *p) { assert(p); frees++; free(p); }
 static void set_height(void *p, int h) { assert(p == view && h <= 140); ((int32_t *)(view + 0x80))[2] = 100 + h; }
-static void content_rect(void *p, void *out) { assert(p == view || p == backdrop); int32_t r[] = {0, 0, p == view ? 140 : 221, p == view ? 304 : 320}; memcpy(out, r, sizeof(r)); }
-static void draw_context(void *p, void *c) { assert((p == view && c == view + 0xa4) || (p == backdrop && c)); }
+static void content_rect(void *p, void *out) { assert(p == view || p == backdrop || p == status); int32_t r[] = {0, 0, p == view ? 140 : p == status ? 19 : 221, p == view ? 304 : 320}; memcpy(out, r, sizeof(r)); }
+static void draw_context(void *p, void *c) { assert((p == view && c == view + 0xa4) || ((p == backdrop || p == status) && c)); }
 static int wrapped_height(void *c, const char *s, int w, int spacing) { assert(c == view + 0xa4 && s && w == 280 && !spacing); measurements++; return 24; }
 static void read_pixel(void *surface, int x, int y, void *out) {
     assert(surface == art + 4 && x >= 0 && x < 100 && y >= 0 && y < 100);
@@ -130,6 +133,9 @@ static void invalidate(void *p, const void *rect) { assert(p == view && rect == 
 #define osos_graphics_set_color set_color
 #define osos_bitmap_load_resource bitmap_load
 #define osos_graphics_attach_bitmap attach
+#define osos_ui_invalidate invalidate_screen
+#undef OSOS_VIEW_WINDOW
+#define OSOS_VIEW_WINDOW get_window
 #include "../../../payload/lyrics_lrc.c"
 #include "../../../payload/lyrics_scene.c"
 #include "../../../payload/lyrics_view.c"
@@ -159,10 +165,12 @@ int main(void)
     assert(visual.owner == view && visual.background && allocs == 1 && samples == 192);
     assert(blits == 1 && fills == 0 && text_draws && starts == 1 && interval == 100);
     int first_loads = loaded, first_measures = measurements, first_constructs = constructors;
+    int first_snapshots = snapshots;
     draw(); assert(allocs == 1 && samples == 192 && starts == 1); /* cached, timer not postponed */
+    assert(snapshots == first_snapshots + 1); /* one audio-position mutex query per draw */
     assert(loaded == first_loads && measurements == first_measures && font_sets == 1);
     assert(constructors == first_constructs); /* no bitmap/context construction per frame */
-    tick(); assert(!invalidations && interval == 100); /* pause: no redraw */
+    tick(); assert(!invalidations && interval == 100 && screen_invalidations == 1); /* one initial header repaint */
     snap.position = 2400; tick(); assert(!invalidations); /* steady cue: no redraw */
     snap.position = 2900; tick(); assert(!invalidations && interval == 33);
     snap.position = 3000; tick(); assert(invalidations == 1); draw();
@@ -221,7 +229,7 @@ int main(void)
     cfw_lyrics_view_measure(unrelated); assert(stock_measures == 1);
     cfw_lyrics_view_destroy(unrelated); assert(destroyed == 2);
     assert(frees == allocs - 1); /* one allocation deliberately failed */
-    /* Only the private Extra Info source gets the full-width backdrop. The
+    /* Only the Extra Info instance gets the full-width backdrop. The
      * real idle clock and all light-mode bitmap views use Apple's draw. */
     WORD(backdrop, 0x40) = 0; /* color-only stock BitmapView need not have an image source */
     WORD(backdrop, 0x44) = CFW_LYRICS_BACKDROP;
@@ -232,12 +240,25 @@ int main(void)
     dark = 1; WORD(backdrop, 0x44) = 0x0dad0851;
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
     assert(bitmap_draws == 2);
-    WORD(backdrop, 0x44) = CFW_LYRICS_BACKDROP;
+    WORD(backdrop, 0x44) = 0; /* native color-only view has no image source */
+    WORD(backdrop, 0x4c) = OSOS_LYRICS_BACKDROP_VIEW_ID;
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
     assert(last_source[0] == 19 && last_source[2] == 240 && last_source[3] == 320);
     attempts = samples;
     draw(); assert(samples == attempts); /* header and lyrics share one cached image */
     assert(last_source[0] == 100 && last_source[2] == 240 && last_source[3] == 304);
+    other_event[1] = 22; first_loads = loaded;
+    assert(cfw_lyrics_view_event(view, other_event) == 23 && loaded == first_loads);
+    other_event[1] = 19;
+    assert(cfw_lyrics_view_event(view, other_event) == 23 && loaded == first_loads + 1);
+    WORD(status, 0x4c) = OSOS_STATUS_BACKDROP_VIEW_ID;
+    cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
+    assert(last_source[0] == 0 && last_source[2] == 19 && last_source[3] == 320);
+    int stock_bitmaps = bitmap_draws;
+    different_window = 1;
+    cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
+    assert(bitmap_draws == stock_bitmaps + 1);
+    different_window = 0;
     setting_art = 0; old_blits = blits; int old_fills = fills;
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
     assert(blits == old_blits && fills == old_fills + 1);
@@ -248,6 +269,14 @@ int main(void)
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
     assert(blits == old_blits && fills == old_fills + 2); /* outside screen: bounded neutral fill */
     cfw_lyrics_view_visibility(view, 0);
+    cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
+    assert(bitmap_draws == stock_bitmaps + 2);
     assert(constructors == destructors);
+    enabled = 0; draw(); /* untimed lyrics can own a backdrop without a scene */
+    RECT(backdrop, 0x80)[0] = 19;
+    cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
+    assert(!visual.owner && visual.background);
+    cfw_lyrics_view_visibility(view, 0);
+    assert(!visual.background && constructors == destructors);
     puts("Native lyric view: scoped draw, cache, timer, lifecycle, fallback and OOM passed");
 }

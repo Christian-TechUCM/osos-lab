@@ -90,8 +90,8 @@ int main(void)
     assert(cfw_lyrics_background(pixels + 1, sizeof(pixels) - 2, 320, 240, rgb));
     assert(pixels[0] == 0xa5 && pixels[sizeof(pixels) - 1] == 0xa5);
     assert(u16(pixels + 1) == 0x565 && u16(pixels + 5) == 640);
-    /* Top row fades into the theme; album colors remain below the fade. */
-    assert(u16(pixels + 29) == u16(pixels + 29 + 316 * 2));
+    /* Album colors extend behind the status/header, with no navy top band. */
+    assert(u16(pixels + 29) != u16(pixels + 29 + 316 * 2));
     assert(u16(pixels + 29 + 640 * 40) != u16(pixels + 29 + 640 * 40 + 316 * 2));
     assert(cfw_lyrics_background(pixels + 1, sizeof(pixels) - 2, 1, 1, rgb));
     assert(u16(pixels + 5) == 4 && pixels[31] == 0 && pixels[32] == 0);

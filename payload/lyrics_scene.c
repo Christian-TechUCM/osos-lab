@@ -189,11 +189,6 @@ int cfw_lyrics_background(void *output, size_t capacity, unsigned width, unsigne
                 unsigned top = rgb[ay * CFW_LYRICS_SAMPLES_X + ax][c] * (256 - fx) + rgb[ay * CFW_LYRICS_SAMPLES_X + bx][c] * fx;
                 unsigned bottom = rgb[by * CFW_LYRICS_SAMPLES_X + ax][c] * (256 - fx) + rgb[by * CFW_LYRICS_SAMPLES_X + bx][c] * fx;
                 color[c] = (top * (256 - fy) + bottom * fy) / 65536;
-                /* Fade the first 28 pixels into the surrounding dark surface.
-                 * Done once in the cached bitmap, never in animation frames. */
-                unsigned base = (CFW_THEME_BACKGROUND >> ((2 - c) * 8)) & 255;
-                unsigned fade = y < 28 ? y : 28;
-                color[c] = (color[c] * fade + base * (28 - fade)) / 28;
             }
             /* RGB565 has few dark tones. Ordered dithering trades visible
              * gradient bands for a bounded, one-quantization-step pattern. */

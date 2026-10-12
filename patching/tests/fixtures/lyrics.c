@@ -8,7 +8,13 @@
 #define CFW_PATCH_H
 #define PATCH_ARM
 
-static int model, other_model, controller, player;
+static int model, other_model, player;
+static unsigned char controller[0x100];
+static int volume_calls, timer_stops, layout_timer;
+static int wheel_volume(void *c, uint32_t argument) {
+    assert(c == &controller && argument == 7); volume_calls++; return 1;
+}
+static void stop_layout_timer(void *timer) { assert(timer == &layout_timer); timer_stops++; }
 static uint32_t now;
 static int available = 1, stock_result = 1, events, notifications, prepares, shows, appends;
 static const char *tag;
@@ -58,6 +64,10 @@ static void append(struct osos_context_menu *menu, uint32_t label, const char *a
 #define OSOS_NOW_PLAYING_HAS_EXTRA_INFO has_info
 #define OSOS_NOW_PLAYING_PREPARE_EXTRA_INFO prepare
 #define OSOS_NOW_PLAYING_SHOW_EXTRA_INFO show
+#undef OSOS_NOW_PLAYING_WHEEL_VOLUME
+#define OSOS_NOW_PLAYING_WHEEL_VOLUME wheel_volume
+#undef OSOS_TIMER_STOP
+#define OSOS_TIMER_STOP stop_layout_timer
 #include "../../../payload/lyrics_lrc.c"
 #include "../../../payload/lyrics.c"
 
@@ -76,6 +86,19 @@ static void action(const char *name) { assert(cfw_lyrics_action(&controller, nam
 
 int main(void)
 {
+    *(void **)(controller + 0xb8) = &layout_timer;
+    assert(cfw_lyrics_action(&controller, "CFW_LyricsVolume", OSOS_ACTION_SUPPORT_QUERY));
+    assert(cfw_lyrics_action(0, "CFW_LyricsVolume", 7));
+    assert(cfw_lyrics_action(&controller, "CFW_LyricsVolume", 0));
+    assert(!volume_calls && !timer_stops);
+    assert(cfw_lyrics_action(&controller, "CFW_LyricsVolume", 7));
+    assert(volume_calls == 1 && timer_stops == 1);
+    const char *stock_actions[] = {"HandlePlayPause", "NextTrack", "PrevTrack",
+        "StartFastForward", "StartRewind", "HandleMenuKey", "HandleSelectExtraInfo"};
+    for (unsigned i = 0; i < sizeof(stock_actions) / sizeof(stock_actions[0]); i++) {
+        assert(!cfw_lyrics_action(&controller, stock_actions[i], 7));
+        assert(!cfw_lyrics_action(&controller, stock_actions[i], OSOS_ACTION_SUPPORT_QUERY));
+    }
     tag = "[00:01.00]First line\n[00:02.50]Second line\n[00:03.00]";
     now = 0; assert(!strcmp(read_line(), "First line\nSecond line\n"));
     now = 1000; assert(!strcmp(read_line(), "First line\nSecond line\n"));
