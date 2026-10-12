@@ -79,6 +79,10 @@ int main(void)
     tag = "[00:01.00]First line\n[00:02.50]Second line\n[00:03.00]";
     now = 0; assert(!strcmp(read_line(), ""));
     now = 1000; assert(!strcmp(read_line(), "First line"));
+    struct cfw_lyrics_snapshot snapshot;
+    assert(cfw_lyrics_snapshot(&snapshot));
+    assert(snapshot.position == now && snapshot.lrc == &lyrics.lrc && !snapshot.delay_ms);
+    uint32_t first_generation = snapshot.generation;
     event(&model, 0x80008); assert(notifications == 0); /* pause */
     now = 2500; event(&model, 0x80008); assert(notifications == 1);
     assert(!strcmp(read_line(), "Second line"));
@@ -101,11 +105,13 @@ int main(void)
     action("CFW_LyricsReset"); assert(lyrics.delay_ms == 0);
     cfw_lyrics_menu((struct osos_context_menu *)&controller); assert(appends == 4);
     event(&model, 0x80009); assert(!lyrics.model && !lyrics.lrc.count && !lyrics.delay_ms);
+    assert(!cfw_lyrics_snapshot(&snapshot));
     tag = "Untimed lyrics stay intact"; assert(read_line() == tag);
     tag = "[00:01]Timed\nUntimed"; assert(read_line() == tag);
     tag = "[00:01.1234]Malformed"; assert(read_line() == tag);
     tag = "[00:01]Timed\xe2\x80\xa8Untimed"; assert(read_line() == tag);
     tag = "[00:01]Replacement"; now = 1000; assert(!strcmp(read_line(), "Replacement"));
+    assert(cfw_lyrics_snapshot(&snapshot) && snapshot.generation != first_generation);
     /* A changed tag at the same owner must replace the previous cached text. */
     tag = "[00:01]New text!!!"; assert(!strcmp(read_line(), "New text!!!"));
     void *unrelated = 0;

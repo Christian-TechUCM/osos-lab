@@ -90,6 +90,13 @@ PATCH_POINTER(0x08998708, OSOS_NOW_PLAYING_PROPERTY, cfw_lyrics_property);
 PATCH_POINTER(0x089986d4, OSOS_NOW_PLAYING_MODEL_EVENT, cfw_lyrics_model_event);
 /* Only the lyric text view: stock small Helvetica -> stock large bold font. */
 PATCH_WORD(0x0882ad3c, 0x0dad0013, 0x0dad001e);
+/* Shared TextView hooks immediately forward every non-lyric view. */
+PATCH_POINTER(0x089af0f0, OSOS_TEXT_VIEW_DRAW, cfw_lyrics_view_draw);
+PATCH_POINTER(0x089af0ac, OSOS_TEXT_VIEW_EVENT, cfw_lyrics_view_event);
+PATCH_POINTER(0x089af124, OSOS_TEXT_VIEW_VISIBILITY, cfw_lyrics_view_visibility);
+PATCH_POINTER(0x089af198, OSOS_TEXT_VIEW_MEASURE, cfw_lyrics_view_measure);
+/* Entry hook also covers the deleting destructor and direct subclass calls. */
+PATCH_JUMP(OSOS_TEXT_VIEW_DESTROY, 0xe92d4070, 0xe1a04000, cfw_lyrics_view_destroy);
 PATCH_CALL(OSOS_TRACKDATA_DESTROY_STORAGE_CALL, OSOS_TRACKDATA_DESTROY_STORAGE,
            cfw_album_artist_destroy_tracks);
 /* Retain the Album Artist MHOD that the native importer discards. */

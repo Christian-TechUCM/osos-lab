@@ -40,11 +40,13 @@ class PayloadTests(unittest.TestCase):
                 "idle_clock",
                 "sleep_timer",
                 "lyrics",
+                "lyrics_scene",
+                "lyrics_view",
             ):
                 with self.subTest(fixture=name):
                     executable = directory / name
                     flags = []
-                    if name == "bitmap_assets":
+                    if name in ("bitmap_assets", "lyrics_view"):
                         # Native pointers have four-byte alignment on a 64-bit host.
                         flags.append("-fno-sanitize=alignment")
                     subprocess.run(

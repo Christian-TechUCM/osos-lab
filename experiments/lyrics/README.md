@@ -3,9 +3,10 @@
 This is a **Mac/browser proof of concept**, plus a portable C timeline core.
 Its sidecar C core is outside `payload/`. A separate experimental
 [native implementation](../../docs/lyrics-native.md) now uses embedded LRC tags
-and Apple's existing lyric view, with coarse line updates, timing adjustment
-and a larger font. It is not hardware-tested. The smooth preview, selectable
-font sizes and album-color background described below are not yet native.
+and Apple's existing lyric view, with eased line scrolling, timing adjustment,
+a larger font and a blurred multicolor background. It is not hardware-tested.
+The browser's selectable font sizes and full-panel layout remain prototype-only;
+the native background is confined to Apple's lyric reading area.
 
 ## What works
 

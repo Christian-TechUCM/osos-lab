@@ -51,11 +51,11 @@ RepriseOS package and builds a companion using that iPod's identity.
   not independently verified on hardware.
 
 This fork has an experimental [native live-lyrics implementation](docs/lyrics-native.md):
-embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment, and a
-larger stock font. It follows the stock roughly one-second playback events;
-**it is not yet hardware-tested**. Smooth highlighting, selectable text sizes,
-and blurred album-color backgrounds remain in the
-[Mac/browser lyrics lab](experiments/lyrics/README.md), not the native view.
+embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment, a
+larger stock font, eased scrolling/highlighting and a blurred multicolor album
+background in the lyric reading panel. **It is not yet hardware-tested**;
+33 ms animation scheduling is not a measured device frame rate. Selectable
+font sizes remain in the [Mac/browser lyrics lab](experiments/lyrics/README.md).
 
 **Album Artists** groups tracks by their Album Artist tag, using Artist when that
 field is empty. Show or hide the entry through Settings → Main Menu and Settings →

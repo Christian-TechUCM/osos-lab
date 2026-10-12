@@ -7,7 +7,8 @@
 
 /* See docs/lyrics-native.md for the pinned 2.0.5 ABI evidence. All state is
  * UI-owned. Copy the tag: neither track objects nor Apple's temporary strings
- * are retained. There are no new timers, file writes, or audio callbacks. */
+ * are retained. The separate view adapter owns its UI timer; no file writes or
+ * audio callbacks are used. */
 static struct {
     void *model;
     struct cfw_lrc lrc;
@@ -15,10 +16,12 @@ static struct {
     char display[CFW_LRC_MAX_LINE + 1];
     size_t size;
     int cue, delay_ms;
+    uint32_t generation;
 } lyrics;
 
 static void reset(void)
 {
+    lyrics.generation++;
     lyrics.model = 0;
     lyrics.lrc.count = 0;
     lyrics.lrc.text = 0;
@@ -94,6 +97,26 @@ PATCH_ARM int cfw_lyrics_model_event(void *model, const uint32_t *event)
 static void *model_get(void)
 {
     return ((void *(*)(void))OSOS_NOW_PLAYING_MODEL_GET)();
+}
+
+int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out)
+{
+    if (!lyrics.lrc.count || lyrics.model != model_get()) return 0;
+    out->lrc = &lyrics.lrc;
+    out->position = position();
+    out->generation = lyrics.generation;
+    out->delay_ms = lyrics.delay_ms;
+    return 1;
+}
+
+void *cfw_lyrics_artwork(void)
+{
+    if (!lyrics.lrc.count || lyrics.model != model_get()) return 0;
+    void *bitmap = 0;
+    typedef int (*fn)(void *, uint32_t, uint32_t, void **);
+    if (!((fn)OSOS_NOW_PLAYING_PROPERTY)(lyrics.model, OSOS_RESOURCE_DRAW,
+                                        OSOS_NOW_PLAYING_ARTWORK, &bitmap)) return 0;
+    return bitmap;
 }
 
 void cfw_lyrics_menu(struct osos_context_menu *menu)
