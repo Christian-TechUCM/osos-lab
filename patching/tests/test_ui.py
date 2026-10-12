@@ -40,6 +40,29 @@ def menu(rows):
 
 
 class UiTests(unittest.TestCase):
+    def test_lyrics_and_sleep_timer_preserve_all_now_playing_layouts(self):
+        root = Path(__file__).resolve().parents[2]
+        metadata = json.loads((root / "firmware/ui.json").read_text())
+        bindings = json.loads((root / "payload/native/ui.json").read_text())["bindings"]
+        resources = Resources(metadata["resources"], bindings)
+        for feature in ("sleep_timer", "lyrics"):
+            compile_document(resources, parser.read(root / f"payload/{feature}.ui"))
+        layouts = blocks(resources.stock("SLst", "NowPlaying_Screen"))
+        self.assertTrue(layouts)
+        for _, layout in layouts:
+            key = "SEVT", word(layout, 0)
+            original = resources.stock(*key)
+            updated = resources.added[key]
+            self.assertEqual(updated[4 : len(original)].data, original[4:].data)
+            for action in (
+                "SleepTimer",
+                "Lyrics",
+                "LyricsEarlier",
+                "LyricsLater",
+                "LyricsReset",
+            ):
+                self.assertIn(f"contextualMenu.CFW_{action}".encode(), updated.data)
+
     def test_sleep_timer_shortcut_preserves_existing_now_playing_events(self):
         root = Path(__file__).resolve().parents[2]
         metadata = json.loads((root / "firmware/ui.json").read_text())

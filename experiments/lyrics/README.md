@@ -1,11 +1,11 @@
 # Live lyrics prototype
 
 This is a **Mac/browser proof of concept**, plus a portable C timeline core.
-It does not add a Lyrics screen to the installed firmware yet. The C core is
-outside `payload/`, so the firmware bundle contains the existing Reprise
-features, the imported idle-clock fixes, the GitHub Dark palette below, and a
-stock Sleep Timer shortcut, but no native Lyrics screen. No new firmware
-addresses are guessed.
+Its sidecar C core is outside `payload/`. A separate experimental
+[native implementation](../../docs/lyrics-native.md) now uses embedded LRC tags
+and Apple's existing lyric view, with coarse line updates, timing adjustment
+and a larger font. It is not hardware-tested. The smooth preview, selectable
+font sizes and album-color background described below are not yet native.
 
 ## What works
 
@@ -134,9 +134,10 @@ iTunesDB identifier and must not be used to bind a track on the iPod.**
 `lyrics_current_adjusted` supplies the same ±5000 ms display-only adjustment in
 the portable C reader. It uses bounded signed arithmetic so a positive delay
 can correctly produce a before-first-line result, including cues at zero;
-negative delays cannot wrap the unsigned playback clock. It is not connected
-to the iPod player yet. Native font selection and per-track preferences also
-remain part of the pending renderer integration.
+negative delays cannot wrap the unsigned playback clock. This sidecar reader
+is not connected to the iPod player; the native implementation parses Apple's
+embedded lyric string instead. Selectable native sizes and persistent per-track
+preferences remain pending.
 
 ## Native sleep-timer shortcut
 
@@ -184,38 +185,18 @@ as part of this search.
 
 ## Firmware integration gates
 
-**Current blocker:** the checkout has annotation metadata but no decrypted Apple
-2.0.5 OSOS bytes for instruction/ABI verification. The pinned `osos.bin` is
-10,634,496 bytes, SHA-256
-`660eb6ff5f498bb1a75e85f1f9921bf0c753525a8bca9b4fa47ed260e5ad0f1e`
-(see `firmware/apple.json`). A full image assembly also needs the other pinned
-Apple inputs. The documented project decryption path uses an iPod in BootROM
-DFU as an AES helper; it executes a temporary device payload, so it is not a
-purely offline step. No acquisition, DFU session, or installation has been
-performed here. Obtaining verified saved inputs or separately authorizing a
-carefully planned device-assisted session is required before proceeding.
+Pinned Apple 2.0.5 inputs were acquired in a separately authorized temporary
+DFU decryption session. The user subsequently confirmed normal Apple boot and
+music playback. Inputs are private and ignored by Git. The new implementation
+uses verified instructions and resource data from those inputs; see the
+[native binding evidence and limitations](../../docs/lyrics-native.md).
 
-1. Confirm the player clock units. The tracked Apple 2.0.5 analysis names
-   `MediaPlayer_GetPosition` at `0x0816f704`, but its annotation explicitly says
-   the backend units are not established. Do not assume milliseconds. Validate
-   duration, normal playback, pause, and seeking against that same backend.
-2. Confirm a stable current-track identity and lifetime. Use the actual synced
-   iTunesDB persistent ID and a verified path mapping, not title/artist guesses.
-   A host exporter can read the synced files and key their sidecars by that ID.
-   Verify that Finder preserves the embedded tags through sync/conversion.
-3. Verify the Lyrics controller lifecycle, text layout, click-wheel handling,
-   and timer/event ABI against 2.0.5. Proposed access is a Lyrics action from
-   Now Playing. Reset all state on track change or screen exit; free storage
-   only after callbacks cannot access it.
-4. Read and validate one sidecar on track change. Poll the verified playback
-   clock on a UI-owned timer; redraw only when the cue changes. Keep file I/O
-   and parsing out of audio callbacks. Proposed polling interval: 100 ms,
-   subject to measurement of UI load and battery use on hardware.
-5. Prototype long-line scrolling and UTF-8-to-native-text conversion using the
-   actual iPod fonts. Missing/malformed sidecars fall back to static text or a
-   clear message without interrupting audio. A seek must reset the active cue.
-6. Build, check image preimages and memory bounds, and review the first native
-   implementation before a separate, explicitly approved hardware install.
+Remaining gates are compiled-image preimage/bounds validation followed by a
+separately planned hardware trial. That trial must check embedded tags after
+sync, loading and navigation, track changes, pause/seek, timing controls, large
+font wrapping/scrolling, dark-mode contrast, playback stability and battery use.
+The v1 implementation uses the stock position event, not a new 100 ms timer.
+Smooth scrolling and album-color rendering require further native work.
 
 The current device was identified as a 2007 6G MB029 with Apple 1.1.2 Mac.
 Reprise requires FAT32; Mac-formatted storage needs a separate migration before

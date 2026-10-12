@@ -1,0 +1,11 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<ui>
+  <string id="CFW_LYRICS_LABEL" text="Live Lyrics"/>
+  <string id="CFW_LYRICS_EARLIER" text="Lyrics: 0.1s earlier"/>
+  <string id="CFW_LYRICS_LATER" text="Lyrics: 0.1s later"/>
+  <string id="CFW_LYRICS_RESET" text="Lyrics: reset timing"/>
+  <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_Lyrics" handler="CFW_Lyrics"/>
+  <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsEarlier" handler="CFW_LyricsEarlier"/>
+  <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsLater" handler="CFW_LyricsLater"/>
+  <screen-event screen="NowPlaying_Screen" event="contextualMenu.CFW_LyricsReset" handler="CFW_LyricsReset"/>
+</ui>

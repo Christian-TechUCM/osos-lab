@@ -25,6 +25,7 @@ class PayloadTests(unittest.TestCase):
                     root / "payload/dark_mode.ui",
                     root / "payload/custom_eq.ui",
                     root / "payload/sleep_timer.ui",
+                    root / "payload/lyrics.ui",
                 ],
                 directory,
                 "test",
@@ -38,6 +39,7 @@ class PayloadTests(unittest.TestCase):
                 "dark_mode",
                 "idle_clock",
                 "sleep_timer",
+                "lyrics",
             ):
                 with self.subTest(fixture=name):
                     executable = directory / name

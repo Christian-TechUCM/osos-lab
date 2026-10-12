@@ -50,10 +50,12 @@ RepriseOS package and builds a companion using that iPod's identity.
   Apple's existing sleep-timer screen. This fork's shortcut is host-tested but
   not independently verified on hardware.
 
-This fork also has a [Mac-only lyrics lab](experiments/lyrics/README.md): live
-line highlighting, album-color backgrounds, timing adjustment, larger text,
-and a timer preview. **There is no native Lyrics screen yet.** Do not install
-the development bundle expecting these lyrics features to be present.
+This fork has an experimental [native live-lyrics implementation](docs/lyrics-native.md):
+embedded LRC lines on Apple's lyric screen, ±5-second timing adjustment, and a
+larger stock font. It follows the stock roughly one-second playback events;
+**it is not yet hardware-tested**. Smooth highlighting, selectable text sizes,
+and blurred album-color backgrounds remain in the
+[Mac/browser lyrics lab](experiments/lyrics/README.md), not the native view.
 
 **Album Artists** groups tracks by their Album Artist tag, using Artist when that
 field is empty. Show or hide the entry through Settings → Main Menu and Settings →
