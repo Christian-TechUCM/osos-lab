@@ -29,9 +29,11 @@ The stock position event is emitted after a position change of at least
 1,000 ms. This implementation therefore refreshes at approximately one-second
 intervals during playback, with additional refreshes on relevant stock events.
 It does not yet provide smooth scrolling, neighboring-line highlighting,
-word-level karaoke, or album-color blurred backgrounds. Those remain browser
-prototype features. The existing GitHub Dark palette and Sleep Timer shortcut
-remain in the firmware independently of lyrics.
+word-level karaoke, or album-color blurred backgrounds. Smooth line highlighting,
+selectable font sizes and album-color backgrounds remain browser prototype
+features; word-level highlighting is not implemented there either. The existing
+GitHub Dark palette and Sleep Timer shortcut remain in the firmware independently
+of lyrics.
 
 ## Verified firmware bindings
 
@@ -103,9 +105,18 @@ The private library audit matched all 1,479 timed tracks across 93,953 cues;
 209 tracks had no lyrics and one mixed-format tag uses the stock fallback.
 Music and firmware inputs stay outside Git.
 
-A compiled recipe must still be assembled against the pinned Apple input to
-verify patch preimages and the payload reservation. Successful host tests and
-assembly do not establish UI lifetime, refresh latency, font fit, scrolling,
+The [CI build for `264e0c3`](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38186371268)
+passed 121 Python, 93 Rust and four JavaScript tests, with one Python test skipped
+and four Rust tests ignored. The GCC 9.5.0 ARM build uses 851,044 of 983,040 reserved
+bytes (131,996 free). Its OSOS recipe was assembled offline against the pinned
+Apple input, successfully checking all patch preimages and output bounds. The
+11,617,536-byte image has SHA-256
+`f3e2ba8988a763db84da75b1ca6ad235cf43635d2572dd0c27b368df8f4c79b8`.
+The development ZIP passed integrity checking, with SHA-256
+`887232c32d15b099393a53e3ab04dd35108c09444ee82ce098313813b1e22392`.
+No hardware installation was performed.
+
+Successful host tests and assembly do not establish UI lifetime, refresh latency, font fit, scrolling,
 power use or playback reliability on hardware. Any hardware trial requires a
 separately agreed installation and recovery plan. In particular, a Mac-formatted
 iPod requires an explicitly approved FAT32 migration; development must not

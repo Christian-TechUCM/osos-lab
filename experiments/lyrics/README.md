@@ -191,8 +191,8 @@ music playback. Inputs are private and ignored by Git. The new implementation
 uses verified instructions and resource data from those inputs; see the
 [native binding evidence and limitations](../../docs/lyrics-native.md).
 
-Remaining gates are compiled-image preimage/bounds validation followed by a
-separately planned hardware trial. That trial must check embedded tags after
+The compiled OSOS image passed offline preimage/bounds validation. The remaining
+gate is a separately planned hardware trial. That trial must check embedded tags after
 sync, loading and navigation, track changes, pause/seek, timing controls, large
 font wrapping/scrolling, dark-mode contrast, playback stability and battery use.
 The v1 implementation uses the stock position event, not a new 100 ms timer.
