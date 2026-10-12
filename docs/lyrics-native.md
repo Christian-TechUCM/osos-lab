@@ -203,6 +203,30 @@ unsupported panel geometry fall back to the ordinary text renderer.
 
 ## Validation and remaining checks
 
+### Dark backdrop follow-up (2026-10-11, source `716321b`)
+
+[CI run 38205678238](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38205678238)
+passed 124 Python cases (one skipped), 93 Rust tests (four ignored), four
+JavaScript tests, lint/format, ARM compilation and packaging. Native host tests
+exercise the private backdrop scope, unchanged idle-clock/light-mode dispatch,
+shared screen-space crops, cached native-object lifecycle, out-of-screen fallback,
+and replacement of an already-armed idle timer at a transition.
+
+Bundle version is `0.0.0-dev+751ee59d` (CI's PR merge revision). Local artifacts:
+
+- `.build/ci-firmware-716321b/classic/repriseos.zip`, SHA-256
+  `dd80755d88a09569464771a881c9e713fb42d0afb4949c94a0bb6ef879b9ccdf`.
+- `.build/dfu-prep/verified-osos-716321b.bin`, 11,617,536 bytes, SHA-256
+  `f9caa4e026c01098d0a306868d424d74d05379a906726baf3b08a09e7c7229a7`.
+
+Offline assembly passed all 91 original preimages. Independent read-only checks
+confirmed ten distinct payload hook targets, the private background source ID,
+unchanged original BitmapView draw code and idle-clock color, and the destructor
+trampoline. Companion recipe/data and bootloader are byte-identical to `237a756`.
+The ZIP integrity check passed. **No iPod writes were performed for this follow-up.**
+Dark header readability, seamless cropping, theme transitions and actual scrolling
+smoothness still require hardware testing; host cadence is not measured FPS.
+
 ### Refinement candidate (2026-10-11, source `237a756`)
 
 [CI run 38203200176](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38203200176)
