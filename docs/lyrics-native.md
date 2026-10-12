@@ -100,22 +100,46 @@ overlay for ready ExtraInfo layout `0x0dad0974` (literal at `0x0821476c`).
 Loading/failed layouts and the loading timer at `+0xe0` are untouched. Support
 queries are inert.
 
-Hardware feedback shows the resource binding alone was insufficient. The next
-candidate also hooks **only** Now Playing's input-dispatch vtable slot
-`0x0899be4c` (expected original `0x0812a070`). It uses the original event-name
-formatter `0x08291974`, checks the current layout via `0x081747ec` + `0x28`, and
-forwards a named `wheel` event on ready layout `0x0dad0974` directly to the same
-Apple volume handler. It preserves the original event pointer, not a fabricated
-wheel delta. All other events/layouts call the original dispatcher. The same
-formatter and event pointer are used by the original dispatcher; these ABIs
-were checked against the pinned 2.0.5 disassembly. This is a **candidate fix**,
-not proof that wheel events reach this slot on hardware.
+Hardware feedback for build `c4d4f498` confirmed smoother lyrics and working
+play/pause, next/previous, and Menu, but **volume still failed only on lyrics**.
+Both the resource binding and the subsequent Now Playing input-slot hook at
+`0x0899be4c` were too late to cover focused child controls. Native dispatch
+`0x0810611c` offers an event to the focused recipient and walks parents only
+when that recipient returns unhandled. Thus a child consuming rotation can
+prevent either screen-level hook from running. The exact live recipient has
+not been instrumented; this is the routing gap established by static inspection,
+not a claim of a captured on-device trace.
+
+The follow-up replaces the late input-slot hook with one preimage-checked
+`blx r2` call-site hook at `0x0810620c`, immediately before the focused
+recipient's virtual `+0x30` handler. Apple's global filters, per-recipient
+filtering, bubbling, and final event destructor remain in the native dispatcher.
+The wrapper intercepts only native wheel type `0x15` (verified from constructor
+`0x08289560`) when all of these checks pass:
+
+- The lyric TextView is currently visible, regardless of Keep Screen Awake.
+- The current layout is ready ExtraInfo `0x0dad0974`, not loading/failed/menu.
+- The active controller from `0x08104d00` / `0x08104d58` has the exact Now Playing
+  vtable `0x0899bd3c` (verified from constructor/destructor literals).
+- Walking the focused recipient's native virtual parent accessor `+0x1c`
+  reaches that active controller, within a bounded 16-node traversal.
+
+It then sends the **original wheel object** to Apple's volume routine, without
+decoding/manufacturing a delta or bypassing the volume limit. All other events
+call the original recipient method with the original arguments and return
+value. The wrapper neither allocates nor destroys events. This also leaves
+explicit-recipient dispatch at `0x0810625c` unchanged. The old Now Playing input
+slot is restored to its original value by omitting its patch from the new image.
+Tests cover a focused child that consumes the wheel, positive/negative motion,
+unrelated focus, missing state/controller, non-ready layouts, buttons/timers,
+hidden lyrics, and cyclic parent graphs. On-device confirmation is still needed.
 
 The stock tables already bind play/pause, next, previous, Menu, Center and
 long-press seeking. Their handlers and event propagation are retained, not
 duplicated with speculative raw-button hooks. The user's latest hardware report
-confirms these buttons work. Only volume-wheel input remains unverified in the
-new candidate; do not conflate it with the working playback buttons.
+confirms these buttons work. The installed build's volume failure is confirmed;
+the follow-up fix remains unverified on hardware. Do not conflate those outcomes
+with the working playback buttons.
 
 Earbud inline controls are a separate hardware path; see [the investigation](earpods-remote.md).
 
@@ -125,7 +149,7 @@ sidebar, `#F2F7FF` ink and `#39D0FF` accent. Selection `#244058` and
 border `#354762` are adaptations, not exact copies. Word-level karaoke remains
 unsupported; Sleep Timer is independent.
 
-## Selectable themes (built candidate, not installed)
+## Selectable themes (copied; hardware confirmation pending)
 
 Settings → Themes contains **Dark palette**, **Light palette**, and **Accent
 color**. The existing Dark Mode switch still chooses which palette is active.
@@ -186,9 +210,19 @@ routines. Companion and bootloader artifacts are byte-identical to the previous
 
 Candidate OSOS: `.build/dfu-prep/verified-osos-92b79a7.bin`.
 SHA-256: `8f0052d670c01670bd8d9218d4e4deada2e81c5d35245be506113f02c340fb5d`.
-This candidate has **not** been copied to the iPod. Volume-wheel behavior,
-theme coverage/contrast, and actual scrolling performance still require hardware
-testing; host tests and successful assembly do not establish those outcomes.
+On 2026-10-12, after the user confirmed charge/connection/no active sync, this
+image was copied to the identified FAT32 iPod volume
+`51CBB953-E32A-3660-A943-9C91B0702890`. The existing `ec97c78` image was verified
+against its known checksum and preserved both at
+`/osos-cfw.previous-ec97c78.bin` and in the private Mac backup
+`private-backups/ipod-mb029-2026-10-11/before-themes-92b79a7/osos-cfw.bin`.
+The candidate was staged and checksum-verified before replacing only
+`/osos-cfw.bin`, then read back and verified again. All Device settings and
+`cfw-loader.bin` compared unchanged. No music, partitions or NOR were written.
+Safe ejection succeeded. Reboot and user confirmation remain pending.
+Volume-wheel behavior, theme coverage/contrast, and actual scrolling performance
+still require hardware testing; host tests and successful assembly do not
+establish those outcomes.
 
 Keep screen awake postpones only the lit-display inactivity timer while a
 lyric TextView is visible (including ordinary-text fallback). It does not wake

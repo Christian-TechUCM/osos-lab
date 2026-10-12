@@ -94,8 +94,9 @@ PATCH_POINTER(OSOS_NOW_PLAYING_SECONDARY_ACTION_SLOT, OSOS_NOW_PLAYING_ACTION,
 /* Cache a complete lyric fallback and reset the timeline on track changes. */
 PATCH_POINTER(0x08998708, OSOS_NOW_PLAYING_PROPERTY, cfw_lyrics_property);
 PATCH_POINTER(0x089986d4, OSOS_NOW_PLAYING_MODEL_EVENT, cfw_lyrics_model_event);
-/* Only Now Playing's general input-dispatch slot, not the global controller. */
-PATCH_POINTER(0x0899be4c, OSOS_CONTROLLER_INPUT_EVENT, cfw_lyrics_controller_input);
+/* After native input filters, before a focused child can consume rotation.
+ * The wrapper forwards every event except a wheel owned by visible lyrics. */
+PATCH_CALL_WORD(OSOS_FOCUSED_EVENT_CALL, 0xe12fff32, cfw_lyrics_focused_event);
 /* Only the display inactivity timer; manual shutdown and SleepService remain stock. */
 PATCH_POINTER(0x0899302c, OSOS_DISPLAY_POWER_EVENT, cfw_lyrics_power_event);
 PATCH_POINTER(0x0899309c, 0x082a1674, cfw_lyrics_power_event_secondary);

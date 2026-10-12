@@ -170,7 +170,9 @@ int main(void)
     timer_owner = TIMER(view);
     draw();
     assert(cfw_lyrics_view_keep_awake());
+    assert(cfw_lyrics_view_visible());
     setting_awake = 0; assert(!cfw_lyrics_view_keep_awake()); setting_awake = 1;
+    setting_awake = 0; assert(cfw_lyrics_view_visible()); setting_awake = 1;
     assert(visual.owner == view && visual.background && allocs == 1 && samples == 192);
     assert(blits == 1 && fills == 0 && text_draws && starts == 1 && interval == 100);
     int first_loads = loaded, first_measures = measurements, first_constructs = constructors;
@@ -196,11 +198,13 @@ int main(void)
     int stopped = stops;
     cfw_lyrics_view_visibility(view, 0);
     assert(!cfw_lyrics_view_keep_awake());
+    assert(!cfw_lyrics_view_visible());
     assert(!visual.owner && !visual.background && frees == 2 && stops == stopped + 1);
     int started = starts; tick(); assert(starts == started); /* stale event consumed */
     cfw_lyrics_view_visibility(view, 1); draw(); assert(visual.owner == view);
     assert(cfw_lyrics_view_destroy(view) == view && !visual.owner && !visual.background);
     assert(!cfw_lyrics_view_keep_awake());
+    assert(!cfw_lyrics_view_visible());
     started = starts; tick(); assert(starts == started);
     oom = 1; draw(); assert(visual.owner == view && !visual.background);
     int attempts = allocs; draw(); assert(allocs == attempts); /* no OOM retry storm */

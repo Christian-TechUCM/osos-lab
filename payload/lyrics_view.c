@@ -51,6 +51,11 @@ int cfw_lyrics_view_keep_awake(void)
     return reading_awake && cfw_lyrics_keep_awake();
 }
 
+int cfw_lyrics_view_visible(void)
+{
+    return reading_view && visible(reading_view);
+}
+
 static void free_background(void)
 {
     if (visual.objects_ready) {

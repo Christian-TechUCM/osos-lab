@@ -13,6 +13,8 @@ int cfw_lyrics_snapshot(struct cfw_lyrics_snapshot *out);
 void *cfw_lyrics_artwork(void);
 uint32_t cfw_lyrics_generation(void);
 int cfw_lyrics_view_keep_awake(void);
+/* UI-thread query; independent of the Keep Screen Awake preference. */
+int cfw_lyrics_view_visible(void);
 void cfw_lyrics_menu(struct osos_context_menu *menu);
 int cfw_lyrics_action(void *controller, const char *action, uint32_t argument);
 #endif
