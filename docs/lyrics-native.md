@@ -125,7 +125,7 @@ sidebar, `#F2F7FF` ink and `#39D0FF` accent. Selection `#244058` and
 border `#354762` are adaptations, not exact copies. Word-level karaoke remains
 unsupported; Sleep Timer is independent.
 
-## Selectable themes (local candidate)
+## Selectable themes (built candidate, not installed)
 
 Settings → Themes contains **Dark palette**, **Light palette**, and **Accent
 color**. The existing Dark Mode switch still chooses which palette is active.
@@ -174,8 +174,21 @@ boundaries when comparing solid versus album backgrounds on the iPod.
 Local verification: 45 patching tests (including address/undefined-behavior
 sanitized native fixtures), 49 tool tests (one skipped), and 31 USB helper tests
 pass. All 30 payload C translation units compile for ARM926EJ-S using Clang.
-This is **not** a pinned GCC 9.5 release build: release linking, reserved-space
-checking, recipe assembly and hardware testing remain required before installation.
+The pinned GCC 9.5 production build also passed in
+[run 38215145403](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38215145403)
+for source `92b79a71b3140e9e234ba1903df329a1dcf04b81`, using PR merge build
+`c4d4f498`. Release linking uses 931,564 of 983,040 reserved bytes, leaving
+51,476 bytes free. Local recipe assembly produced an 11,617,536-byte image;
+verification passed for all 92 preimages, 11 distinct payload hook targets,
+package asset checksums, theme strings, and unchanged native volume/input
+routines. Companion and bootloader artifacts are byte-identical to the previous
+`ec97c78` package.
+
+Candidate OSOS: `.build/dfu-prep/verified-osos-92b79a7.bin`.
+SHA-256: `8f0052d670c01670bd8d9218d4e4deada2e81c5d35245be506113f02c340fb5d`.
+This candidate has **not** been copied to the iPod. Volume-wheel behavior,
+theme coverage/contrast, and actual scrolling performance still require hardware
+testing; host tests and successful assembly do not establish those outcomes.
 
 Keep screen awake postpones only the lit-display inactivity timer while a
 lyric TextView is visible (including ordinary-text fallback). It does not wake
