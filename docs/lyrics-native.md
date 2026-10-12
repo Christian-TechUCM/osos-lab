@@ -134,6 +134,22 @@ Tests cover a focused child that consumes the wheel, positive/negative motion,
 unrelated focus, missing state/controller, non-ready layouts, buttons/timers,
 hidden lyrics, and cyclic parent graphs. On-device confirmation is still needed.
 
+The follow-up is source `89f9c6eb0f483a5b4c61c3483411c573d951c7a3`, built as
+`e6dab640` in [successful CI run 38221426805](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38221426805).
+Local sanitized payload fixtures, all 45 patching tests, 49 tools tests (one
+skipped), and 31 USB-helper tests passed. Changed payload C units also compiled
+for ARM926EJ-S with Clang; CI passed the pinned GCC 9.5 build and full test suite.
+The payload uses 931,628 / 983,040 reserved bytes (51,412 free).
+
+Local assembly `.build/dfu-prep/verified-osos-89f9c6e.bin` is 11,617,536 bytes,
+SHA-256 `0804f3bcb23a83e5efe3338507828f76756b1002a0f5c0b51ff12fc5e59726bd`.
+All 92 preimages, package asset checksums and ZIP integrity passed. The focused
+dispatch call decodes to an aligned payload target `0x08b3f8dc`; the dispatch
+filters/bubbling/destructor around it, explicit-recipient dispatch, native wheel
+decoder/volume routine, controller event routine and old input slot compared
+unchanged to the pinned Apple image. Companion/bootloader bytes are unchanged
+from the installed package. **This follow-up has not been installed on the iPod.**
+
 The stock tables already bind play/pause, next, previous, Menu, Center and
 long-press seeking. Their handlers and event propagation are retained, not
 duplicated with speculative raw-button hooks. The user's latest hardware report
