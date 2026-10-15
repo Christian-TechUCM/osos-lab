@@ -265,3 +265,29 @@ other input/volume checks stay in place. The diagnostic notice is removed
 from CFW Info. Diagnostics remain available only as a compile-time opt-in for
 future investigation; the tests continue to exercise both modes, and the
 release fixture checks that the actual default is disabled.
+
+### Clean candidate verified — not installed
+
+Source `79ed6d46f72a8fae3f7eba19a8737b310863f22a` passed production
+[run 38681274197](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38681274197),
+including the Python/native C, Rust, JavaScript, lint and packaging checks.
+Payload use is 931,636 / 983,040 bytes, leaving 51,404 bytes free.
+
+Local image: `.build/dfu-prep/verified-osos-79ed6d4.bin`.
+Build label: **`79ed6d46`**. Size: 11,617,536 bytes. SHA-256:
+`af5ea27475b318e04c822604e2218f0735366e5a97e759f8ee0db666e3a0478e`.
+Bundle SHA-256:
+`74692d5ff45eec4b991a67fd3099ed5775e98bd9c58cd79284cd698c781d2a69`.
+
+Offline assembly and
+`.build/verify_wheel_probe_image.py 79ed6d4 --clean` passed the 92 preimage
+checks, asset hashes, size/hook/native-code checks, constructor and parent-slot
+checks, revision check and ZIP integrity. Neither the WHEEL PROBE 1 marker nor
+the temporary counter notice exists in the assembled image. Companion and
+bootloader files remain byte-identical. The volume routing source and native
+bindings are unchanged from the user-confirmed `9c8df629` correction.
+
+No iPod access or installation occurred during clean-build preparation.
+The installed `9c8df629` diagnostic remains the hardware-confirmed rollback
+candidate; clean-build boot and normal-lyrics volume still need a short
+regression check after a separately approved update.
