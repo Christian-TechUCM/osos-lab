@@ -17,9 +17,10 @@ int main(void)
     setting_art = 0;
     draw();
     assert(probe_texts == 1 && interval == 250 && cfw_lyrics_view_visible());
-    assert(visual.font == 1 && font_sets == 3); /* restore the scene font */
+    assert(visual.font == 0 && font_sets == 1 && setting_font == 1);
     tick(); draw(); /* unchanged position still updates the diagnostic */
     assert(probe_texts == 2 && interval == 250 && screen_invalidations == 1);
+    assert(font_sets == 1 && setting_font == 1); /* no per-frame font swaps */
     tick(); assert(invalidations == 1); draw(); assert(probe_texts == 3);
     uint32_t wheel[] = {0, 0x15, 0, 0};
     int before = probe_events;

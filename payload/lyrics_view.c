@@ -281,6 +281,9 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     }
     void *context = CONTEXT(view);
     unsigned font = cfw_lyrics_font();
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+    font = 0; /* Small text for the probe; do not change the saved preference. */
+#endif
     if (!visual.scene.valid || visual.font != font || visual.scene.generation != snapshot.generation) {
         static const uint32_t fonts[] = {0x0dad0013, 0x0dad0012, 0x0dad001e};
         ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
@@ -341,16 +344,11 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     const unsigned char navy[4] = {24, 38, 58, 255}, white[4] = {255, 255, 255, 255};
     osos_graphics_set_color(context, navy);
     ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
-    ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
-        (view, PTR(view, 0x38), 0x0dad0013, 0);
     ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0x21);
     osos_graphics_set_color(context, white);
     int32_t diagnostic_rect[4] = {rect[0], rect[1] + 12, rect[2], rect[3] - 12};
     ((void (*)(void *, const char *, const void *, unsigned, int, int, int))OSOS_GRAPHICS_DRAW_WRAPPED)
         (context, diagnostic, diagnostic_rect, 0, 0, 0, 0);
-    static const uint32_t restore_fonts[] = {0x0dad0013, 0x0dad0012, 0x0dad001e};
-    ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
-        (view, PTR(view, 0x38), restore_fonts[visual.font < 3 ? visual.font : 1], 0);
     arm(view, 250);
 #else
     arm(view, visual.interval);

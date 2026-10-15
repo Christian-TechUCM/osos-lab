@@ -22,8 +22,9 @@ settings retain their existing behavior.
 
 The diagnostic refreshes at 250 ms even when paused; it deliberately is not
 a scrolling-performance benchmark. It preserves the existing timed-lyrics
-scene and input ownership. Small native text is used for the panel, with the
-chosen lyric font restored after each draw. Setting the compile-time flag to
+scene and input ownership. Small native text is used for the panel without
+changing the saved lyric-font preference or swapping fonts per frame.
+Setting the compile-time flag to
 zero removes the instrumentation and panel; host tests cover both modes.
 
 ## Test later, after a separately agreed installation
