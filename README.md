@@ -63,9 +63,9 @@ RepriseOS package and builds a companion using that iPod's identity.
 - Experimental [native live lyrics](docs/lyrics-native.md): embedded timed LRC
   lines, ±5-second timing adjustment, scrolling/highlighting, lyric text and
   color choices, album-art or solid backgrounds, and a keep-awake option.
-- Native playback controls remain available in Live Lyrics. A clickwheel-volume
-  routing fix has passed build and host verification but still needs device
-  confirmation.
+- Native playback controls remain available in Live Lyrics. The user confirmed
+  working clickwheel volume on their sixth-generation iPod after the verified
+  derived-controller correction. Other hardware still needs independent testing.
 - Separate light/dark lyric artwork backdrops and bounded theme-aware asset
   recoloring. The [Mac/browser lyrics lab](experiments/lyrics/README.md) is a
   prototype, not firmware.

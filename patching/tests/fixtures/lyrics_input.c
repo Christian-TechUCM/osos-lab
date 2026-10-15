@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include <assert.h>
 #include <string.h>
+#ifndef CFW_LYRICS_INPUT_DIAGNOSTICS
+#define CFW_LYRICS_INPUT_DIAGNOSTICS 1
+#endif
 #define _Static_assert(...)
 #include "../../../payload/osos.h"
 #undef _Static_assert

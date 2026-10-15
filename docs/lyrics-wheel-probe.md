@@ -1,5 +1,10 @@
 # Temporary wheel-input diagnostic
 
+**Current status:** the user confirmed working volume with correction build
+`9c8df629`. Normal builds now default to diagnostics disabled, restoring the
+regular lyric display. The procedure below records the opt-in diagnostic used
+to isolate the bug; it is not the default UI of the clean build.
+
 The user confirmed build `e6dab640` is running, but wheel volume still does
 not work in lyrics. Playback buttons work, and volume works outside lyrics.
 The host fixtures verified a simulated input path, not the device's actual
@@ -222,3 +227,41 @@ approved update. After updating, repeat the photos and actual-volume test;
 G=8 with increasing S/R demonstrates dispatch/return, not by itself an audible
 volume change. A remaining G=6 would point to the focus-ancestry check and must
 be investigated rather than bypassed blindly.
+
+### Correction copied — 2026-10-14
+
+After the user requested installation and confirmed charge, secure connection
+and no sync, the same UUID-verified FAT32 iPod's installed `b53682f0` hash and
+companion hash were rechecked. Firmware, companion and Device settings were
+backed up under
+`private-backups/ipod-mb029-2026-10-11/before-wheel-derived-9c8df62/`.
+The prior diagnostic was also preserved on the iPod as
+`/osos-cfw.previous-b53682f0.bin` with SHA-256
+`325d600cec118366dd1a70d133eabd6593e556e505e233e83d8fb83ff7f3537a`.
+
+The correction was staged and checksum-verified, then renamed to
+`/osos-cfw.bin`, synchronized and readback-verified against
+`cf1b6c065e75a436cff688f3be69aa135a7b11487e1f9c5cf43aa30f1b9eeaba`.
+Both rollback copies matched the previous firmware. Settings compared
+unchanged and the companion retained its prior hash. No music, bootloader,
+partition or NOR writes occurred. Safe ejection succeeded.
+
+The copy is complete. Reboot into **`9c8df629`**, hardware behavior and the
+next wheel-probe photos still await the user; this is not yet a confirmed fix.
+
+## Hardware confirmation and clean build
+
+The user subsequently reported: "great the volume works now!" This confirms
+the correction on their sixth-generation iPod; it does not establish behavior
+on every supported model or in every playback state.
+
+At the user's request, normal builds now set
+`CFW_LYRICS_INPUT_DIAGNOSTICS=0` by default. Preprocessor guards remove probe
+counters, diagnostic text formatting, the navy diagnostic panel, forced small
+text, and the fixed 250 ms diagnostic refresh. The normal scrolling-lyrics
+path, saved font/color/background preferences, and adaptive 33/100 ms refresh
+return unchanged. The explicit base/derived-controller acceptance and all
+other input/volume checks stay in place. The diagnostic notice is removed
+from CFW Info. Diagnostics remain available only as a compile-time opt-in for
+future investigation; the tests continue to exercise both modes, and the
+release fixture checks that the actual default is disabled.
