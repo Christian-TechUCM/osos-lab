@@ -17,6 +17,7 @@ enum {
 };
 
 static unsigned int enabled;
+static unsigned search_input_draw;
 static const struct osos_path settings_path = {0, "iPod_Control\\Device\\CFWDark"};
 
 int cfw_dark_mode_enabled(void)
@@ -143,8 +144,24 @@ PATCH_ARM uint32_t cfw_dark_mode_reflection_blend(uint32_t pixel, uint32_t backg
     return osos_rgb565_blend(pixel, background, weight);
 }
 
+void cfw_dark_mode_stock_text_draw(void *view, void *argument, void *clip)
+{
+    /* Apple 2.0.5 View Search_Keyboard_Template (0x0dad0dd7), entry at
+     * +0x37c: Search_Input_Text has instance ID 0x0dad0ddc. Its rounded
+     * white input-area bitmaps are intentionally still stock. Scope the
+     * exemption to this synchronous draw, restoring it even for nesting. */
+    unsigned previous = search_input_draw;
+    search_input_draw = *(uint32_t *)((unsigned char *)view + 0x4c) == 0x0dad0ddc;
+    ((void (*)(void *, void *, void *))OSOS_TEXT_VIEW_DRAW)(view, argument, clip);
+    search_input_draw = previous;
+}
+
 PATCH_ARM void cfw_dark_mode_text_color(void *context, const unsigned char *color)
 {
+    if (search_input_draw) {
+        osos_graphics_set_color(context, color);
+        return;
+    }
     unsigned char mapped[4];
     struct cfw_palette palette = cfw_theme_palette();
     if (enabled && color[0] == color[1] && color[1] == color[2] &&

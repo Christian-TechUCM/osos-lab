@@ -4,35 +4,46 @@
 #include "preferences.h"
 #include "cfw.h"
 
-static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 0, 1};
+static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 0, 1, 2};
 static unsigned save_status;
 static const struct osos_path path = {0, "iPod_Control\\Device\\CFWLyrics"};
 struct record { uint32_t magic, version, values[CFW_LYRICSSETTINGS_FIELDS], checksum; };
+struct record_v1 { uint32_t magic, version, values[4], checksum; };
 
-static uint32_t checksum(const struct record *r)
+static uint32_t record_checksum(const void *r, unsigned size)
 {
     const unsigned char *bytes = (const unsigned char *)r;
     uint32_t sum = 2166136261u;
-    for (unsigned n = 0; n < sizeof(*r) - 4; n++) sum = (sum ^ bytes[n]) * 16777619u;
+    for (unsigned n = 0; n < size - 4; n++) sum = (sum ^ bytes[n]) * 16777619u;
     return sum;
 }
+static uint32_t checksum(const struct record *r) { return record_checksum(r, sizeof(*r)); }
 
 void cfw_lyrics_settings_load(void)
 {
     struct record r;
     for (unsigned n = 0; n < CFW_LYRICSSETTINGS_FIELDS; n++)
         values[n] = cfw_lyricssettings_fields[n].default_value;
+    unsigned fields = CFW_LYRICSSETTINGS_FIELDS;
     if (!cfw_preferences_read(&path, &r, sizeof(r)) || r.magic != 0x3152594c ||
-        r.version != 1 || r.checksum != checksum(&r)) return;
-    for (unsigned n = 0; n < CFW_LYRICSSETTINGS_FIELDS; n++)
+        r.version != 2 || r.checksum != checksum(&r)) {
+        /* Preserve all four existing preferences when upgrading. No disk
+         * write at boot; persist v2 only on the next explicit settings save. */
+        struct record_v1 old;
+        if (!cfw_preferences_read(&path, &old, sizeof(old)) || old.magic != 0x3152594c ||
+            old.version != 1 || old.checksum != record_checksum(&old, sizeof(old))) return;
+        fields = 4;
+        for (unsigned n = 0; n < fields; n++) r.values[n] = old.values[n];
+    }
+    for (unsigned n = 0; n < fields; n++)
         if (r.values[n] >= cfw_lyricssettings_fields[n].count) return;
-    for (unsigned n = 0; n < CFW_LYRICSSETTINGS_FIELDS; n++) values[n] = r.values[n];
+    for (unsigned n = 0; n < fields; n++) values[n] = r.values[n];
 }
 
 static void save(void)
 {
     struct record r = {0};
-    r.magic = 0x3152594c; r.version = 1;
+    r.magic = 0x3152594c; r.version = 2;
     for (unsigned n = 0; n < CFW_LYRICSSETTINGS_FIELDS; n++) r.values[n] = values[n];
     r.checksum = checksum(&r);
     save_status = !cfw_preferences_write(&path, &r, sizeof(r));
@@ -42,6 +53,7 @@ unsigned cfw_lyrics_font(void) { return values[CFW_LYRICSSETTINGS_FONT]; }
 unsigned cfw_lyrics_color(void) { return values[CFW_LYRICSSETTINGS_COLOR]; }
 unsigned cfw_lyrics_album_background(void) { return values[CFW_LYRICSSETTINGS_ARTWORK]; }
 unsigned cfw_lyrics_keep_awake(void) { return values[CFW_LYRICSSETTINGS_AWAKE]; }
+unsigned cfw_lyrics_blur_level(void) { return values[CFW_LYRICSSETTINGS_BLUR]; }
 
 int cfw_lyrics_settings_action(const char *action, uint32_t argument)
 {

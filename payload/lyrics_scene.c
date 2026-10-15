@@ -130,35 +130,55 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
     return interval;
 }
 
-void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light)
+void cfw_lyrics_blur_art(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background,
+                         int light, unsigned level)
 {
-    uint8_t temp[CFW_LYRICS_SAMPLES][3];
+    /* One scanline of scratch, rather than a second thumbnail on the stack. */
+    uint8_t temp[CFW_LYRICS_SAMPLES_X][3];
+    /* Three separable box passes approximate a Gaussian, with bounded work
+     * only on cache creation. Never run this in the scrolling frame loop. */
+    int radius = level == 0 ? 1 : level == 1 ? 2 : 4;
+    unsigned divisor = (unsigned)(2 * radius + 1);
     for (unsigned pass = 0; pass < 3; pass++) {
         for (int y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
             for (int x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
                 unsigned total[3] = {0, 0, 0};
-                for (int dy = -2; dy <= 2; dy++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    int sx = x + dx;
+                    if (sx < 0) sx = 0;
+                    if (sx >= CFW_LYRICS_SAMPLES_X) sx = CFW_LYRICS_SAMPLES_X - 1;
+                    for (unsigned c = 0; c < 3; c++) total[c] += rgb[y * CFW_LYRICS_SAMPLES_X + sx][c];
+                }
+                for (unsigned c = 0; c < 3; c++) temp[x][c] = total[c] / divisor;
+            }
+            for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++)
+                for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = temp[x][c];
+        }
+        for (int x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
+            for (int y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
+                unsigned total[3] = {0, 0, 0};
+                for (int dy = -radius; dy <= radius; dy++) {
                     int sy = y + dy;
                     if (sy < 0) sy = 0;
                     if (sy >= CFW_LYRICS_SAMPLES_Y) sy = CFW_LYRICS_SAMPLES_Y - 1;
-                    for (int dx = -2; dx <= 2; dx++) {
-                        int sx = x + dx;
-                        if (sx < 0) sx = 0;
-                        if (sx >= CFW_LYRICS_SAMPLES_X) sx = CFW_LYRICS_SAMPLES_X - 1;
-                        for (unsigned c = 0; c < 3; c++) total[c] += rgb[sy * CFW_LYRICS_SAMPLES_X + sx][c];
-                    }
+                    for (unsigned c = 0; c < 3; c++) total[c] += rgb[sy * CFW_LYRICS_SAMPLES_X + x][c];
                 }
-                for (unsigned c = 0; c < 3; c++) temp[y * CFW_LYRICS_SAMPLES_X + x][c] = total[c] / 25;
+                for (unsigned c = 0; c < 3; c++) temp[y][c] = total[c] / divisor;
             }
+            for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
+                for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = temp[y][c];
         }
-        for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
-            for (unsigned c = 0; c < 3; c++) rgb[i][c] = temp[i][c];
     }
     /* Dark enough for muted neighboring lines as well as the highlighted line. */
     const unsigned neutral[3] = {background >> 16, (background >> 8) & 255, background & 255};
     unsigned weight = light ? 15 : 30;
     for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
         for (unsigned c = 0; c < 3; c++) rgb[i][c] = (rgb[i][c] * weight + neutral[c] * (100 - weight)) / 100;
+}
+
+void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light)
+{
+    cfw_lyrics_blur_art(rgb, background, light, 2);
 }
 
 void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])

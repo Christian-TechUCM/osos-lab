@@ -7,3 +7,4 @@ unsigned cfw_lyrics_font(void);
 unsigned cfw_lyrics_color(void);
 unsigned cfw_lyrics_album_background(void);
 unsigned cfw_lyrics_keep_awake(void);
+unsigned cfw_lyrics_blur_level(void);

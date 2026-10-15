@@ -27,7 +27,7 @@ static struct {
     unsigned interval, armed, art_attempted;
     unsigned armed_interval, objects_ready;
     unsigned refresh_screen;
-    unsigned art_theme, pending, stepped;
+    unsigned art_theme, art_blur, pending, stepped;
     struct cfw_lyrics_snapshot frame;
     uint32_t bitmap[0xb8 / 4], source[0x44 / 4];
     unsigned font, dark, color, artwork;
@@ -138,12 +138,15 @@ static int measure(void *context, const char *text, int width)
 static void make_background(uint32_t generation, int width, int height)
 {
     unsigned theme = cfw_theme_key();
+    unsigned blur = cfw_lyrics_blur_level();
     if (visual.art_attempted && visual.art_generation == generation &&
-        visual.art_width == width && visual.art_height == height && visual.art_theme == theme) return;
+        visual.art_width == width && visual.art_height == height &&
+        visual.art_theme == theme && visual.art_blur == blur) return;
     free_background();
     visual.art_attempted = 1;
     visual.art_generation = generation;
     visual.art_theme = theme;
+    visual.art_blur = blur;
     visual.art_width = width;
     visual.art_height = height;
     unsigned char *bitmap = cfw_lyrics_artwork();
@@ -159,16 +162,29 @@ static void make_background(uint32_t generation, int width, int height)
     for (unsigned n = 0; n < 4; n++)
         if (RECT(bitmap, 0x18)[n] != bounds[n]) return;
     uint8_t rgb[CFW_LYRICS_SAMPLES][3];
+    /* Aspect-fill center crop, then a 2x2 area sample per thumbnail cell.
+     * This preserves the cover's spatial composition instead of stretching
+     * a sparse palette over the screen. All native coordinates stay bounded. */
+    int cw = w, ch = h;
+    if (w * 3 > h * 4) cw = h * 4 / 3;
+    else ch = w * 3 / 4;
+    if (cw < 1) cw = 1;
+    if (ch < 1) ch = 1;
+    int left = (w - cw) / 2, top = (h - ch) / 2;
     for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
         for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
-            uint8_t rgba[4] = {0, 0, 0, 255};
-            ((void (*)(void *, int, int, void *))OSOS_SURFACE_READ_PIXEL)
-                (bitmap + 4, (2 * x + 1) * w / (2 * CFW_LYRICS_SAMPLES_X),
-                 (2 * y + 1) * h / (2 * CFW_LYRICS_SAMPLES_Y), rgba);
-            for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = rgba[c];
+            unsigned sum[3] = {0, 0, 0};
+            for (unsigned dy = 0; dy < 2; dy++) for (unsigned dx = 0; dx < 2; dx++) {
+                uint8_t rgba[4] = {0, 0, 0, 255};
+                ((void (*)(void *, int, int, void *))OSOS_SURFACE_READ_PIXEL)
+                    (bitmap + 4, left + (4 * x + 2 * dx + 1) * cw / (4 * CFW_LYRICS_SAMPLES_X),
+                     top + (4 * y + 2 * dy + 1) * ch / (4 * CFW_LYRICS_SAMPLES_Y), rgba);
+                for (unsigned c = 0; c < 3; c++) sum[c] += rgba[c];
+            }
+            for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = sum[c] / 4;
         }
     }
-    cfw_lyrics_blur_palette(rgb, cfw_theme_palette().background, !cfw_dark_mode_enabled());
+    cfw_lyrics_blur_art(rgb, cfw_theme_palette().background, !cfw_dark_mode_enabled(), blur);
     unsigned bytes = 28 + (((unsigned)width * 2 + 3) & ~3u) * (unsigned)height;
     void *data = ((void *(*)(uint32_t))OSOS_IMPORT_ALLOC)(bytes);
     if (!data) return; /* one attempt per track/size, no allocation retry loop */
@@ -356,7 +372,7 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
     return;
 stock:
     release(view);
-    ((void (*)(void *, void *, void *))OSOS_TEXT_VIEW_DRAW)(view, argument, clip);
+    cfw_dark_mode_stock_text_draw(view, argument, clip);
 }
 
 PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)

@@ -32,8 +32,10 @@ static int stock_draws, stock_events, stock_measures, stock_shown, destroyed, in
 static int text_draws, blits, fills, loaded, constructors, destructors, bitmap_draws;
 static int32_t last_source[4];
 static unsigned interval;
+static int min_sample_x = 1024, min_sample_y = 1024, max_sample_x, max_sample_y;
 static void *timer_owner;
-static unsigned setting_font = 1, setting_color, setting_art = 1, setting_awake = 1;
+static unsigned setting_font = 1, setting_color, setting_art = 1, setting_awake = 1, setting_blur = 2;
+unsigned cfw_lyrics_blur_level(void) { return setting_blur; }
 static int dark = 1, font_sets, measurements, snapshots;
 unsigned cfw_lyrics_font(void) { return setting_font; }
 unsigned cfw_lyrics_color(void) { return setting_color; }
@@ -59,6 +61,7 @@ uint32_t cfw_lyrics_generation(void) { return snap.generation; }
 void *cfw_lyrics_artwork(void) { return artwork_enabled ? art : 0; }
 static void native_load(void *p) { assert(p == view || p == unrelated); loaded++; }
 static void native_draw(void *p, void *a, void *c) { assert(p && a == (void *)7 && c == (void *)9); stock_draws++; }
+void cfw_dark_mode_stock_text_draw(void *p, void *a, void *c) { native_draw(p, a, c); }
 static void native_bitmap_draw(void *p, void *a, void *c) { assert(p && a == (void *)7 && c == (void *)9); bitmap_draws++; }
 static int native_event(void *p, const void *e) { assert(p && e); stock_events++; return 23; }
 static void native_measure(void *p) { assert(p); stock_measures++; }
@@ -77,7 +80,12 @@ static void content_rect(void *p, void *out) { assert(p == view || p == backdrop
 static void draw_context(void *p, void *c) { assert((p == view && c == view + 0xa4) || ((p == backdrop || p == status) && c)); }
 static int wrapped_height(void *c, const char *s, int w, int spacing) { assert(c == view + 0xa4 && s && w == 280 && !spacing); measurements++; return 24; }
 static void read_pixel(void *surface, int x, int y, void *out) {
-    assert(surface == art + 4 && x >= 0 && x < 100 && y >= 0 && y < 100);
+    assert(surface == art + 4 && x >= 0 && x < ((int32_t *)(art + 0x98))[3] &&
+           y >= 0 && y < ((int32_t *)(art + 0x98))[2]);
+    if (x < min_sample_x) min_sample_x = x;
+    if (y < min_sample_y) min_sample_y = y;
+    if (x > max_sample_x) max_sample_x = x;
+    if (y > max_sample_y) max_sample_y = y;
     unsigned char c[] = {(unsigned char)(x * 2), (unsigned char)(y * 2), 80, 255};
     memcpy(out, c, sizeof(c)); samples++;
 }
@@ -188,11 +196,12 @@ int main(void)
     assert(cfw_lyrics_view_visible());
     setting_awake = 0; assert(!cfw_lyrics_view_keep_awake()); setting_awake = 1;
     setting_awake = 0; assert(cfw_lyrics_view_visible()); setting_awake = 1;
-    assert(visual.owner == view && visual.background && allocs == 1 && samples == 192);
+    assert(visual.owner == view && visual.background && allocs == 1 && samples == CFW_LYRICS_SAMPLES * 4);
+    assert(min_sample_x == 0 && max_sample_x == 99 && min_sample_y == 12 && max_sample_y == 86);
     assert(blits == 1 && fills == 0 && text_draws && starts == 1 && interval == 100);
     int first_loads = loaded, first_measures = measurements, first_constructs = constructors;
     int first_snapshots = snapshots;
-    draw(); assert(allocs == 1 && samples == 192 && starts == 1); /* cached, timer not postponed */
+    draw(); assert(allocs == 1 && samples == CFW_LYRICS_SAMPLES * 4 && starts == 1); /* cached, timer not postponed */
     assert(snapshots == first_snapshots + 1); /* one audio-position mutex query per draw */
     assert(loaded == first_loads && measurements == first_measures && font_sets == 1);
     assert(constructors == first_constructs); /* no bitmap/context construction per frame */
@@ -209,7 +218,7 @@ int main(void)
     tick(); assert(invalidations == 2 && interval == 100); /* pause mid-transition */
     snap.position = 1000; tick(); assert(invalidations == 3); draw(); /* backward seek */
     snap.delay_ms = 500; tick(); assert(invalidations == 4); draw();
-    snap.generation++; tick(); draw(); assert(allocs == 2 && frees == 1 && samples == 384);
+    snap.generation++; tick(); draw(); assert(allocs == 2 && frees == 1 && samples == CFW_LYRICS_SAMPLES * 8);
     int stopped = stops;
     cfw_lyrics_view_visibility(view, 0);
     assert(!cfw_lyrics_view_keep_awake());
@@ -234,7 +243,7 @@ int main(void)
     RECT(art, 0x98)[3] = 100;
     /* Light mode has its own bright, cached full-screen album background. */
     dark = 0; snap.generation++; attempts = samples; int old_blits = blits;
-    draw(); assert(samples == attempts + 192 && blits == old_blits + 1);
+    draw(); assert(samples == attempts + CFW_LYRICS_SAMPLES * 4 && blits == old_blits + 1);
     attempts = samples; old_blits = blits;
     draw(); assert(samples == attempts && blits == old_blits + 1);
     old_blits = blits;
@@ -289,9 +298,18 @@ int main(void)
     assert(last_source[0] == 0 && last_source[2] == 19 && last_source[3] == 320);
     dark = 0; attempts = samples;
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
-    assert(last_source[0] == 19 && samples == attempts + 192);
+    assert(last_source[0] == 19 && samples == attempts + CFW_LYRICS_SAMPLES * 4);
     cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
-    assert(last_source[0] == 0 && last_source[2] == 19 && samples == attempts + 192);
+    assert(last_source[0] == 0 && last_source[2] == 19 && samples == attempts + CFW_LYRICS_SAMPLES * 4);
+    for (unsigned level = 0; level < 3; level++) {
+        setting_blur = level; attempts = samples;
+        cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
+        assert(samples == attempts + CFW_LYRICS_SAMPLES * 4);
+        assert(visual.art_blur == level);
+        attempts = samples;
+        cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
+        draw(); assert(samples == attempts); /* one rebuild, shared by every view */
+    }
     dark = 1;
     int stock_bitmaps = bitmap_draws;
     different_window = 1;
@@ -317,6 +335,21 @@ int main(void)
     assert(!visual.owner && visual.background);
     cfw_lyrics_view_visibility(view, 0);
     assert(!visual.background && constructors == destructors);
+    const int sizes[][2] = {{1, 1}, {100, 50}, {40, 100}};
+    for (unsigned n = 0; n < 3; n++) {
+        int w = sizes[n][0], h = sizes[n][1];
+        WORD(art, 8) = w * 4; WORD(art, 0xc) = 32;
+        RECT(art, 0x18)[2] = RECT(art, 0x98)[2] = h;
+        RECT(art, 0x18)[3] = RECT(art, 0x98)[3] = w;
+        min_sample_x = min_sample_y = 1024; max_sample_x = max_sample_y = 0;
+        snap.generation++; make_background(snap.generation, 320, 240);
+        assert(visual.background && min_sample_x >= 0 && max_sample_x < w &&
+               min_sample_y >= 0 && max_sample_y < h);
+        if (n == 1) assert(min_sample_x == 17 && max_sample_x == 82);
+        if (n == 2) assert(min_sample_y == 35 && max_sample_y == 64);
+        free_background();
+    }
+    assert(constructors == destructors);
     puts("Native lyric view: scoped draw, cache, timer, lifecycle, fallback and OOM passed");
     return 0;
 }

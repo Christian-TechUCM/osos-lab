@@ -17,6 +17,20 @@ static int controller, model, surface;
 static int now_playing, now_playing_available = 1, icon_notifications;
 static unsigned icon_invalidations;
 static unsigned char drawn[4];
+static uint32_t query_view[0x60 / 4], other_view[0x60 / 4];
+static unsigned query_ink, nested_ink;
+void cfw_dark_mode_text_color(void *, const unsigned char *);
+static void stock_text_draw(void *view, void *argument, void *clip)
+{
+    assert(argument == &model && clip == &controller);
+    const unsigned char black[4] = {0, 0, 0, 255};
+    if (view == query_view) {
+        cfw_dark_mode_stock_text_draw(other_view, argument, clip);
+        nested_ink = drawn[0];
+    }
+    cfw_dark_mode_text_color(&surface, black);
+    if (view == query_view) query_ink = drawn[0];
+}
 int cfw_theme_custom_light(void) { return 0; }
 struct cfw_palette cfw_theme_palette(void) {
     return (struct cfw_palette){CFW_THEME_BACKGROUND, CFW_THEME_SIDEBAR, CFW_THEME_INK,
@@ -156,6 +170,8 @@ static uint32_t blend(uint32_t pixel, uint32_t background, int weight)
 #define osos_string_init string_init
 #define osos_string_destroy string_destroy
 #define osos_resource_name_slot resource_name_slot
+#undef OSOS_TEXT_VIEW_DRAW
+#define OSOS_TEXT_VIEW_DRAW stock_text_draw
 #include "../../../payload/dark_mode.c"
 
 static int stock_actions, stock_properties, adjustments;
@@ -267,6 +283,11 @@ int main(void)
         assert(drawn[1] == (dark ? 0xd0 : 108));
         assert(drawn[2] == (dark ? 0xff : 196));
         assert(drawn[3] == 91);
+        query_view[0x4c / 4] = 0x0dad0ddc;
+        cfw_dark_mode_stock_text_draw(query_view, &model, &controller);
+        assert(query_ink == 0 && nested_ink == (dark ? 0xf2u : 0u));
+        cfw_dark_mode_text_color(&surface, texts[0]);
+        assert(drawn[0] == (dark ? 0xf2 : 0)); /* exemption never leaks */
         const unsigned char warning[] = {248, 81, 73, 64};
         cfw_dark_mode_fill(&surface, &model, warning, 7, &controller);
         assert(!memcmp(drawn, warning, 4));

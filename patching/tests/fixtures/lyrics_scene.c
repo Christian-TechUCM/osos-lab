@@ -76,13 +76,13 @@ int main(void)
     for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
         for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
             unsigned i = y * CFW_LYRICS_SAMPLES_X + x;
-            rgb[i][0] = x < 8 ? 255 : 0;
-            rgb[i][1] = y < 6 ? 120 : 0;
-            rgb[i][2] = x < 8 ? 0 : 255;
+            rgb[i][0] = x < CFW_LYRICS_SAMPLES_X / 2 ? 255 : 0;
+            rgb[i][1] = y < CFW_LYRICS_SAMPLES_Y / 2 ? 120 : 0;
+            rgb[i][2] = x < CFW_LYRICS_SAMPLES_X / 2 ? 0 : 255;
         }
     cfw_lyrics_blur(rgb);
-    assert(rgb[0][0] > rgb[15][0] && rgb[0][2] < rgb[15][2]);
-    assert(rgb[7][0] != rgb[0][0] && rgb[7][2] != rgb[15][2]); /* mixed blur */
+    assert(rgb[0][0] > rgb[31][0] && rgb[0][2] < rgb[31][2]);
+    assert(rgb[15][0] != rgb[0][0] && rgb[15][2] != rgb[31][2]); /* mixed blur */
     unsigned char pixels[28 + 640 * 240 + 2];
     memset(pixels, 0xa5, sizeof(pixels));
     assert(!cfw_lyrics_background(pixels + 1, 20, 320, 240, rgb));
@@ -105,6 +105,20 @@ int main(void)
     for (unsigned n = 0; n < CFW_LYRICS_SAMPLES; n++) {
         assert(rgb[n][0] == 236 * 85 / 100);
         assert(rgb[n][1] == 254 * 85 / 100 && rgb[n][2] == 255 * 85 / 100);
+    }
+    unsigned previous_edge = 0;
+    for (unsigned level = 0; level < 3; level++) {
+        memset(rgb, 0, sizeof(rgb));
+        for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
+            for (unsigned x = CFW_LYRICS_SAMPLES_X / 2; x < CFW_LYRICS_SAMPLES_X; x++)
+                rgb[y * CFW_LYRICS_SAMPLES_X + x][0] = 255;
+        cfw_lyrics_blur_art(rgb, 0, 0, level);
+        unsigned edge = rgb[CFW_LYRICS_SAMPLES_X / 2 - 3][0];
+        assert(edge > previous_edge); /* higher setting spreads the edge further */
+        previous_edge = edge;
+        assert(rgb[0][0] < rgb[31][0]); /* spatial composition survives */
+        for (unsigned n = 0; n < CFW_LYRICS_SAMPLES; n++)
+            assert(rgb[n][0] <= 76 && !rgb[n][1] && !rgb[n][2]);
     }
     puts("Native lyric scene: easing, pause/seek, timing, long cues, blur and bounds passed");
 }

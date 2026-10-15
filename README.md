@@ -63,6 +63,17 @@ RepriseOS package and builds a companion using that iPod's identity.
 - Experimental [native live lyrics](docs/lyrics-native.md): embedded timed LRC
   lines, ±5-second timing adjustment, scrolling/highlighting, lyric text and
   color choices, album-art or solid backgrounds, and a keep-awake option.
+  **Artwork blur** offers Low / Medium / High (default High). A center-cropped
+  32×24 cover thumbnail is blurred once and cached as a full-screen RGB565
+  background; scrolling frames do not resample or blur the cover. Existing
+  lyric preferences migrate from the four-field v1 record to v2 on the next
+  settings save. Returning to older firmware after saving v2 may reset lyric
+  preferences, so keep the settings backup alongside the rollback firmware.
+- Dark-mode search keeps the typed query's original dark ink inside Apple's
+  white input box. This draw-scoped exemption does not affect the keyboard
+  letters or result list; it uses the existing TextView hook, not a new patch
+  site. Both this search correction and adjustable artwork blur still require
+  hardware confirmation after installation.
 - Native playback controls remain available in Live Lyrics. The user confirmed
   working clickwheel volume on their sixth-generation iPod after the verified
   derived-controller correction. Other hardware still needs independent testing.

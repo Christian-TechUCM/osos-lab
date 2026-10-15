@@ -4,8 +4,8 @@
 #include "lyrics_lrc.h"
 
 #define CFW_LYRICS_ROWS 5
-#define CFW_LYRICS_SAMPLES_X 16
-#define CFW_LYRICS_SAMPLES_Y 12
+#define CFW_LYRICS_SAMPLES_X 32
+#define CFW_LYRICS_SAMPLES_Y 24
 #define CFW_LYRICS_SAMPLES (CFW_LYRICS_SAMPLES_X * CFW_LYRICS_SAMPLES_Y)
 struct cfw_lyrics_row {
     int cue, height, top;
@@ -30,6 +30,8 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *, const struct cfw_lrc *
 /* RGB samples in spatial order, blurred with clamped edges and darkened. */
 void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3]);
 void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light);
+void cfw_lyrics_blur_art(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background,
+                         int light, unsigned level);
 /* A native little-endian RGB565 BMap, bounded to 320 x 240. */
 int cfw_lyrics_background(void *out, size_t capacity, unsigned width, unsigned height,
                           const uint8_t rgb[CFW_LYRICS_SAMPLES][3]);
