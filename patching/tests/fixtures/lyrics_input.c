@@ -99,4 +99,38 @@ int main(void)
     child.parent = &controller;
     child_methods[0x1c / 4] = 0; forwarded(&grandchild, event);
     assert(actions == 4);
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+    assert(probe.sent == 4 && probe.returned == 4 && probe.parent == 4);
+    assert(probe.wheel > probe.visible && probe.visible > probe.layout_ok);
+    assert(probe.layout_ok > probe.manager && probe.manager > probe.controller);
+    assert(probe.controller > probe.type && probe.type > probe.parent);
+    assert(probe.gate == 6); /* missing parent accessor */
+    child_methods[0x1c / 4] = (uintptr_t)get_parent;
+    assert(cfw_lyrics_focused_event(&child, event) == 1 && probe.gate == 8);
+    reading = 0; forwarded(&child, event);
+    assert(probe.gate == 1 && !probe.layout && !probe.vtable);
+    reading = 1; state[10] = 0x0dad0975; forwarded(&child, event);
+    assert(probe.gate == 2 && probe.layout == 0x0dad0975 && !probe.vtable);
+    state[10] = 0x0dad0974; have_manager = 0; forwarded(&child, event);
+    assert(probe.gate == 3); have_manager = 1;
+    active = 0; forwarded(&child, event); assert(probe.gate == 4);
+    active = &unrelated; forwarded(&child, event); assert(probe.gate == 5);
+    assert(probe.vtable == (uint32_t)(uintptr_t)child_methods);
+    cfw_lyrics_probe_view_event(0x15); cfw_lyrics_probe_view_event(22);
+    cfw_lyrics_probe_view_event(15); cfw_lyrics_probe_view_event(19);
+    assert(probe.view_wheel == 1 && probe.view_other == 22);
+    struct { char text[CFW_LYRICS_PROBE_TEXT_BYTES]; char guard[8]; } output;
+    memset(&output, 0x5a, sizeof(output));
+    cfw_lyrics_probe_text(output.text);
+    assert(strstr(output.text, "WHEEL PROBE 1 (hex)\n"));
+    assert(strstr(output.text, " G:5 E:16\nLayout:0dad0974"));
+    assert(strstr(output.text, " VW:0001"));
+    for (unsigned i = 0; i < sizeof(output.guard); i++) assert(output.guard[i] == 0x5a);
+    memset(&probe, 0xff, sizeof(probe));
+    cfw_lyrics_probe_text(output.text);
+    assert(strlen(output.text) < sizeof(output.text));
+    assert(strstr(output.text, "C:ffffff W:ffffff"));
+    assert(strstr(output.text, "Layout:ffffffff"));
+    for (unsigned i = 0; i < sizeof(output.guard); i++) assert(output.guard[i] == 0x5a);
+#endif
 }

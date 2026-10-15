@@ -7,6 +7,7 @@
 #include "themes.h"
 #include "patch.h"
 #include "lyrics_ui.h"
+#include "lyrics_probe.h"
 
 /* Only the lyric TextView and its private backdrop are replaced. Apple's
  * context applies the view/window clip and its existing font wraps UTF-8. */
@@ -331,7 +332,29 @@ PATCH_ARM void cfw_lyrics_view_draw(void *view, void *argument, void *clip)
             (context, row->text, line, BYTE(view, 0xe9), 0, 0, 0);
     }
     BYTE(view, 0x1f0) = 0;
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+    /* Temporary instrument panel replaces the lyric pixels, not their input
+     * ownership, layout, scene lifecycle, or native volume routing. */
+    char diagnostic[CFW_LYRICS_PROBE_TEXT_BYTES];
+    cfw_lyrics_probe_text(diagnostic);
+    ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0);
+    const unsigned char navy[4] = {24, 38, 58, 255}, white[4] = {255, 255, 255, 255};
+    osos_graphics_set_color(context, navy);
+    ((void (*)(void *, const void *))OSOS_GRAPHICS_FILL)(context, rect);
+    ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
+        (view, PTR(view, 0x38), 0x0dad0013, 0);
+    ((void (*)(void *, unsigned))OSOS_GRAPHICS_SET_MODE)(context, 0x21);
+    osos_graphics_set_color(context, white);
+    int32_t diagnostic_rect[4] = {rect[0], rect[1] + 12, rect[2], rect[3] - 12};
+    ((void (*)(void *, const char *, const void *, unsigned, int, int, int))OSOS_GRAPHICS_DRAW_WRAPPED)
+        (context, diagnostic, diagnostic_rect, 0, 0, 0, 0);
+    static const uint32_t restore_fonts[] = {0x0dad0013, 0x0dad0012, 0x0dad001e};
+    ((void (*)(void *, void *, uint32_t, int))OSOS_TEXT_VIEW_SET_FONT)
+        (view, PTR(view, 0x38), restore_fonts[visual.font < 3 ? visual.font : 1], 0);
+    arm(view, 250);
+#else
     arm(view, visual.interval);
+#endif
     return;
 stock:
     release(view);
@@ -340,6 +363,9 @@ stock:
 
 PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
 {
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+    if (selected(view)) cfw_lyrics_probe_view_event(event[1]);
+#endif
     if (selected(view) && !(WORD(view, 0xf0) & 0x40) && event[1] == 15 &&
         event[2] == (uint32_t)(uintptr_t)TIMER(view)) {
         if (visual.owner != view) return 1; /* stale event: do not start stock blinking */
@@ -369,6 +395,10 @@ PATCH_ARM int cfw_lyrics_view_event(void *view, const uint32_t *event)
                 if (top[i] != visual.scene.row[i].top || color[i] != visual.scene.row[i].brightness) changed = 1;
             if (snapshot.position == visual.position && snapshot.delay_ms == visual.delay_ms) interval = 100;
         }
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+        changed = 1; /* Refresh even when paused, without logging to storage. */
+        interval = 250;
+#endif
         if (have_snapshot && (changed || visual.refresh_screen)) {
             visual.frame = snapshot;
             visual.pending = 1;

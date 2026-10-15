@@ -10,6 +10,18 @@
 #undef _Static_assert
 #define CFW_PATCH_H
 #define PATCH_ARM
+#ifndef CFW_LYRICS_INPUT_DIAGNOSTICS
+#define CFW_LYRICS_INPUT_DIAGNOSTICS 0
+#endif
+#include "../../../payload/lyrics_probe.h"
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+static int probe_texts, probe_events;
+static uint32_t probe_last_event;
+void cfw_lyrics_probe_text(char out[CFW_LYRICS_PROBE_TEXT_BYTES]) {
+    strcpy(out, "WHEEL PROBE 1 (hex)\nC:000001 W:000000"); probe_texts++;
+}
+void cfw_lyrics_probe_view_event(uint32_t type) { probe_events++; probe_last_event = type; }
+#endif
 
 static unsigned char view[0x240], parent[0x180], art[0xb8], unrelated[0x240], backdrop[0x240], status[0x240];
 static int screen_invalidations, different_window;
@@ -54,7 +66,10 @@ static void native_visibility(void *p, unsigned shown) { assert(p); stock_shown 
 void *cfw_lyrics_view_destroy_original(void *p) { assert(p); destroyed++; return p; }
 static void stop(void *p) { assert(p == timer_owner); stops++; }
 static void start(void *p) { assert(p == timer_owner); starts++; }
-static void set_interval(void *p, uint32_t n) { assert(p == timer_owner && (n == 33 || n == 100)); interval = n; }
+static void set_interval(void *p, uint32_t n) {
+    assert(p == timer_owner && (n == 33 || n == 100 || (CFW_LYRICS_INPUT_DIAGNOSTICS && n == 250)));
+    interval = n;
+}
 static void *allocate(uint32_t n) { allocs++; assert(n <= 153628); return oom ? 0 : calloc(1, n); }
 static void deallocate(void *p) { assert(p); frees++; free(p); }
 static void set_height(void *p, int h) { assert(p == view && h <= 140); ((int32_t *)(view + 0x80))[2] = 100 + h; }
@@ -303,4 +318,5 @@ int main(void)
     cfw_lyrics_view_visibility(view, 0);
     assert(!visual.background && constructors == destructors);
     puts("Native lyric view: scoped draw, cache, timer, lifecycle, fallback and OOM passed");
+    return 0;
 }

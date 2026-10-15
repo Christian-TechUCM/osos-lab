@@ -4,6 +4,9 @@ Custom firmware for iPod.
 
 Build: {build_revision}
 
+WHEEL PROBE 1 diagnostic build.
+Lyrics show input counters temporarily.
+
 Project:
 https://github.com/lgreitis/osos-lab
 
