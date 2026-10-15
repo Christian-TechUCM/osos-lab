@@ -91,3 +91,43 @@ for investigation inside the existing native action/decoder path.
 
 The firmware's device behavior and text legibility still require this hardware
 trial. Passing host tests and binary checks cannot establish them.
+
+## Preparation record — 2026-10-14
+
+Diagnostic source: `b53682f00d23cebe64c1c78277be1872a6032063`, isolated on
+`codex/lyrics-wheel-diagnostics`. The regular feature branch is not replaced.
+[Firmware run 38664148302](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38664148302)
+was dispatched for that exact commit. At handoff it is still running the
+pinned ARM toolchain build; there is **no verified diagnostic firmware image
+yet**. An earlier run for `6220b00` was superseded and cancelled.
+
+Local checks passed: 45 patching tests (including 18 sanitized C fixtures),
+49 tools tests (one skipped), 31 USB-helper tests, Rust workspace tests
+(four ignored fixture-dependent tests), four JavaScript tests, Ruff lint and
+format checks, and ARM926 Clang compilation of the modified native C files.
+The input tests run with diagnostics both on and off. These checks do not
+substitute for the pinned GCC production build or hardware testing.
+
+Before any future installation:
+
+1. Confirm the above run succeeded for the exact source commit; inspect the
+   build log for compiler/payload-size checks and tests.
+2. Download its `firmware` artifact to `.build/ci-firmware-b53682f/`.
+3. Assemble only its `classic/osos.json` / `osos.data` recipe against the
+   already-verified local inputs into
+   `.build/dfu-prep/verified-osos-b53682f.bin`. Do not prepare or write a new
+   companion, boot flash, or device image through USB.
+4. Run the prepared private read-only audit
+   `.build/verify_wheel_probe_image.py`. It verifies the unchanged preimage
+   set, asset hashes, image bounds, existing hook sites, preserved native
+   dispatcher/volume/decoder code, diagnostic labels, source revision, ZIP
+   integrity, and unchanged companion/bootloader bytes. Record the resulting
+   version and SHA-256 before calling the candidate ready.
+5. Obtain the user's readiness confirmation for a separately agreed update
+   and follow the backup/stage/readback/eject process above.
+
+Rollback candidate `e6dab640` remains available locally at
+`.build/dfu-prep/verified-osos-89f9c6e.bin`, SHA-256
+`0804f3bcb23a83e5efe3338507828f76756b1002a0f5c0b51ff12fc5e59726bd`.
+Its checksum was rechecked during preparation. No iPod access or installation
+was performed during this diagnostic preparation.
