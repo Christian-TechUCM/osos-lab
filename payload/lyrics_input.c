@@ -63,6 +63,18 @@ static uintptr_t method(void *object, unsigned slot)
     return (*(const uintptr_t **)object)[slot / 4];
 }
 
+static int now_playing_controller(void *controller)
+{
+    if (!controller) return 0;
+    uintptr_t vtable = *(uintptr_t *)controller;
+    /* The device trace observed the derived, screen-backed controller. Its
+     * verified constructor initializes the same Now Playing base at +0, so
+     * the original controller pointer is valid for the native volume method.
+     * Do not generalize this to arbitrary UI controllers or vtable ranges. */
+    return vtable == OSOS_NOW_PLAYING_VTABLE ||
+           vtable == OSOS_NOW_PLAYING_DERIVED_VTABLE;
+}
+
 static int belongs_to(void *focused, void *controller)
 {
     /* Use the same virtual parent accessor as Apple's dispatch loop. Bound
@@ -96,7 +108,7 @@ PATCH_ARM int cfw_lyrics_focused_event(void *focused, const uint32_t *event)
                 ? ((void *(*)(void *))OSOS_CONTROLLER_CURRENT)(manager) : 0;
             PROBE(if (controller) { probe.controller++; probe.gate = 5;
                 probe.vtable = (uint32_t)*(uintptr_t *)controller; });
-            if (controller && *(uintptr_t *)controller == OSOS_NOW_PLAYING_VTABLE) {
+            if (now_playing_controller(controller)) {
                 PROBE(probe.type++; probe.gate = 6);
                 if (!belongs_to(focused, controller)) goto forward;
                 PROBE(probe.parent++; probe.gate = 7; probe.sent++);

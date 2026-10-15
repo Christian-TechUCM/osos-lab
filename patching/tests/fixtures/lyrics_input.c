@@ -9,7 +9,7 @@
 /* Native slots are four bytes apart; uintptr_t makes mock function pointers
  * usable by the 64-bit host while preserving the native slot indices. */
 struct node { uintptr_t *vtable; struct node *parent; };
-static uintptr_t screen_methods[16], child_methods[16];
+static uintptr_t screen_methods[16], derived_methods[16], child_methods[16];
 static struct node controller = {screen_methods, 0};
 static struct node child = {child_methods, &controller};
 static struct node grandchild = {child_methods, &child};
@@ -37,10 +37,12 @@ int cfw_lyrics_action(void *c, const char *a, uint32_t argument) {
 #undef OSOS_CONTROLLER_MANAGER
 #undef OSOS_CONTROLLER_CURRENT
 #undef OSOS_NOW_PLAYING_VTABLE
+#undef OSOS_NOW_PLAYING_DERIVED_VTABLE
 #define OSOS_UI_LAYOUT_STATE layout
 #define OSOS_CONTROLLER_MANAGER get_manager
 #define OSOS_CONTROLLER_CURRENT get_current
 #define OSOS_NOW_PLAYING_VTABLE ((uintptr_t)screen_methods)
+#define OSOS_NOW_PLAYING_DERIVED_VTABLE ((uintptr_t)derived_methods)
 #include "../../../payload/lyrics_input.c"
 
 static void forwarded(void *recipient, const uint32_t *e) {
@@ -50,10 +52,23 @@ static void forwarded(void *recipient, const uint32_t *e) {
     assert(last_recipient == recipient && last_event == e);
 }
 
-int main(void)
+static void run_variant(uintptr_t *methods)
 {
-    screen_methods[0x1c / 4] = child_methods[0x1c / 4] = (uintptr_t)get_parent;
-    screen_methods[0x30 / 4] = child_methods[0x30 / 4] = (uintptr_t)fallback;
+    controller.vtable = methods;
+    child.parent = &controller;
+    grandchild.parent = &child;
+    active = &controller;
+    actions = fallbacks = parent_calls = visible_queries = 0;
+    reading = have_state = have_manager = 1;
+    fallback_result = 23;
+    memset(state, 0, sizeof(state));
+    memset(event, 0, sizeof(event));
+    event[1] = OSOS_WHEEL_EVENT;
+#if CFW_LYRICS_INPUT_DIAGNOSTICS
+    memset(&probe, 0, sizeof(probe));
+#endif
+    methods[0x1c / 4] = child_methods[0x1c / 4] = (uintptr_t)get_parent;
+    methods[0x30 / 4] = child_methods[0x30 / 4] = (uintptr_t)fallback;
     forwarded(&grandchild, event); /* not the ready lyrics layout */
     state[10] = 0x0dad0974;
     /* Regression: the focused child reports handled before Now Playing ever
@@ -133,4 +148,17 @@ int main(void)
     assert(strstr(output.text, "Layout:ffffffff"));
     for (unsigned i = 0; i < sizeof(output.guard); i++) assert(output.guard[i] == 0x5a);
 #endif
+}
+
+int main(void)
+{
+    /* Execute the full routing and fail-closed matrix for BOTH known types.
+     * The derived case reproduces the device's former G:5 / N:0 failure. */
+    run_variant(screen_methods);
+    run_variant(derived_methods);
+    assert(!now_playing_controller(0));
+    assert(!now_playing_controller(&unrelated));
+    controller.vtable = derived_methods + 1;
+    assert(!now_playing_controller(&controller)); /* no range-based matching */
+    return 0;
 }

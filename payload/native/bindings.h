@@ -110,6 +110,9 @@
 #define OSOS_CONTROLLER_MANAGER 0x08104d00
 #define OSOS_CONTROLLER_CURRENT 0x08104d58
 #define OSOS_NOW_PLAYING_VTABLE 0x0899bd3c
+/* Constructor 0x08214db4 calls 0x08215aec on the same object, then
+ * replaces its primary vtable. The Now Playing base starts at offset zero. */
+#define OSOS_NOW_PLAYING_DERIVED_VTABLE 0x089a2cec
 #define OSOS_WHEEL_EVENT 0x15
 #define OSOS_UI_LAYOUT_STATE 0x081747ec
 /* Descriptor +0x30 -> options +0x10 -> view +0x4c, not image source +0x44. */
