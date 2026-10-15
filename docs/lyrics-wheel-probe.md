@@ -193,3 +193,32 @@ for both known vtable types, with diagnostic mode both enabled and disabled.
 It also rejects unknown, null and adjacent-but-not-exact vtable values. This
 targets the observed type-check failure; it does not claim on-device volume
 is fixed before the next hardware test.
+
+### Verified correction candidate — not installed
+
+Source `9c8df629573ddec97964bb38c5e45011748639cc` built successfully in
+[run 38680047090](https://github.com/Christian-TechUCM/osos-lab/actions/runs/38680047090).
+The production build passed the Python, sanitized native C, Rust, JavaScript,
+lint and packaging checks with the pinned ARM GCC 9.5.0 toolchain. Payload use
+is 932,580 / 983,040 bytes, leaving 50,460 bytes free.
+
+The local image `.build/dfu-prep/verified-osos-9c8df62.bin` is 11,617,536 bytes
+and reports **`9c8df629`** in CFW Info. SHA-256:
+`cf1b6c065e75a436cff688f3be69aa135a7b11487e1f9c5cf43aa30f1b9eeaba`.
+Bundle SHA-256:
+`e7ccacb3516beb926b823b393088711717230cb34ec71446f64f83cc6acf687e`.
+
+Offline assembly and `.build/verify_wheel_probe_image.py 9c8df62` passed:
+the same 92 original-byte checks, asset hashes, output bounds, existing hook
+targets, preserved native dispatcher/volume/decoder code, diagnostic labels,
+revision and ZIP integrity. The strengthened audit also verifies the derived
+constructor's decoded base-constructor branch, vtable literals, unmodified
+constructor/destructor bytes and both native parent-accessor slots. Companion
+and bootloader files remain byte-identical to the earlier package.
+
+No iPod access or installation was performed while preparing this correction.
+The currently installed diagnostic remains `b53682f0` until a separately
+approved update. After updating, repeat the photos and actual-volume test;
+G=8 with increasing S/R demonstrates dispatch/return, not by itself an audible
+volume change. A remaining G=6 would point to the focus-ancestry check and must
+be investigated rather than bypassed blindly.
