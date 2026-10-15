@@ -161,8 +161,11 @@ static void make_background(uint32_t generation, int width, int height)
         stride > 4096) return;
     for (unsigned n = 0; n < 4; n++)
         if (RECT(bitmap, 0x18)[n] != bounds[n]) return;
-    uint8_t rgb[CFW_LYRICS_SAMPLES][3];
-    /* Aspect-fill center crop, then a 2x2 area sample per thumbnail cell.
+    /* Higher-detail thumbnail is temporary heap storage, never stack or
+     * per-frame work. Failure leaves the solid theme fallback cached. */
+    uint8_t (*rgb)[3] = ((void *(*)(uint32_t))OSOS_IMPORT_ALLOC)(CFW_LYRICS_SAMPLES * 3);
+    if (!rgb) return;
+    /* Aspect-fill center crop, then a center sample per thumbnail cell.
      * This preserves the cover's spatial composition instead of stretching
      * a sparse palette over the screen. All native coordinates stay bounded. */
     int cw = w, ch = h;
@@ -173,23 +176,20 @@ static void make_background(uint32_t generation, int width, int height)
     int left = (w - cw) / 2, top = (h - ch) / 2;
     for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
         for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
-            unsigned sum[3] = {0, 0, 0};
-            for (unsigned dy = 0; dy < 2; dy++) for (unsigned dx = 0; dx < 2; dx++) {
-                uint8_t rgba[4] = {0, 0, 0, 255};
-                ((void (*)(void *, int, int, void *))OSOS_SURFACE_READ_PIXEL)
-                    (bitmap + 4, left + (4 * x + 2 * dx + 1) * cw / (4 * CFW_LYRICS_SAMPLES_X),
-                     top + (4 * y + 2 * dy + 1) * ch / (4 * CFW_LYRICS_SAMPLES_Y), rgba);
-                for (unsigned c = 0; c < 3; c++) sum[c] += rgba[c];
-            }
-            for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = sum[c] / 4;
+            uint8_t rgba[4] = {0, 0, 0, 255};
+            ((void (*)(void *, int, int, void *))OSOS_SURFACE_READ_PIXEL)
+                (bitmap + 4, left + (2 * x + 1) * cw / (2 * CFW_LYRICS_SAMPLES_X),
+                 top + (2 * y + 1) * ch / (2 * CFW_LYRICS_SAMPLES_Y), rgba);
+            for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = rgba[c];
         }
     }
     cfw_lyrics_blur_art(rgb, cfw_theme_palette().background, !cfw_dark_mode_enabled(), blur);
     unsigned bytes = 28 + (((unsigned)width * 2 + 3) & ~3u) * (unsigned)height;
     void *data = ((void *(*)(uint32_t))OSOS_IMPORT_ALLOC)(bytes);
-    if (!data) return; /* one attempt per track/size, no allocation retry loop */
-    if (!cfw_lyrics_background(data, bytes, width, height, rgb)) {
-        CALL0(OSOS_IMPORT_FREE, data);
+    int ready = data && cfw_lyrics_background(data, bytes, width, height, rgb);
+    CALL0(OSOS_IMPORT_FREE, rgb);
+    if (!ready) {
+        if (data) CALL0(OSOS_IMPORT_FREE, data);
         return;
     }
     visual.background = data;

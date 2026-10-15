@@ -21,9 +21,10 @@
     <value number="1" label="Album artwork"/>
   </values>
   <values id="cfw_lyrics_blur_levels">
-    <value number="0" label="Low"/>
-    <value number="1" label="Medium"/>
-    <value number="2" label="High"/>
+    <value number="0" label="Off"/>
+    <value number="1" label="Subtle"/>
+    <value number="2" label="Medium"/>
+    <value number="3" label="Heavy"/>
   </values>
   <values id="cfw_lyrics_save_status">
     <value number="0" label="Save settings"/>
@@ -34,7 +35,7 @@
     <selector id="CFW_LyricsSettings_Color" title="Lyric color" values="cfw_lyrics_colors" slot="1" default="0"/>
     <selector id="CFW_LyricsSettings_Artwork" title="Background" values="cfw_lyrics_backgrounds" slot="2" default="0"/>
     <selector id="CFW_LyricsSettings_Awake" title="Keep screen awake" values="cfw_lyrics_switch" slot="3" default="1"/>
-    <selector id="CFW_LyricsSettings_Blur" title="Artwork blur" values="cfw_lyrics_blur_levels" slot="4" default="2"/>
+    <selector id="CFW_LyricsSettings_Blur" title="Artwork blur" values="cfw_lyrics_blur_levels" slot="4" default="1"/>
     <action id="CFW_LyricsSettings_Save" title="Save settings" values="cfw_lyrics_save_status"/>
   </menu>
   <settings-entry menu="CFW_LyricsSettings" after="SettingsMenu_ListItem_Brightness" open="CFW_LyricsSettings_Open"/>

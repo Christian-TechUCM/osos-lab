@@ -130,44 +130,40 @@ unsigned cfw_lyrics_scene_step(struct cfw_lyrics_scene *scene, const struct cfw_
     return interval;
 }
 
+static void blur_line(uint8_t (*rgb)[3], unsigned length, unsigned stride,
+                      unsigned radius, uint8_t temp[CFW_LYRICS_SAMPLES_X][3])
+{
+    unsigned total[3] = {0, 0, 0}, divisor = radius * 2 + 1;
+    for (unsigned c = 0; c < 3; c++) {
+        total[c] = rgb[0][c] * (radius + 1);
+        for (unsigned i = 1; i <= radius; i++) total[c] += rgb[i * stride][c];
+    }
+    for (unsigned i = 0; i < length; i++) {
+        for (unsigned c = 0; c < 3; c++) temp[i][c] = total[c] / divisor;
+        unsigned remove = i > radius ? i - radius : 0;
+        unsigned add = i + radius + 1;
+        if (add >= length) add = length - 1;
+        for (unsigned c = 0; c < 3; c++)
+            total[c] = total[c] - rgb[remove * stride][c] + rgb[add * stride][c];
+    }
+    for (unsigned i = 0; i < length; i++)
+        for (unsigned c = 0; c < 3; c++) rgb[i * stride][c] = temp[i][c];
+}
+
 void cfw_lyrics_blur_art(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background,
                          int light, unsigned level)
 {
     /* One scanline of scratch, rather than a second thumbnail on the stack. */
     uint8_t temp[CFW_LYRICS_SAMPLES_X][3];
-    /* Three separable box passes approximate a Gaussian, with bounded work
-     * only on cache creation. Never run this in the scrolling frame loop. */
-    int radius = level == 0 ? 1 : level == 1 ? 2 : 4;
-    unsigned divisor = (unsigned)(2 * radius + 1);
-    for (unsigned pass = 0; pass < 3; pass++) {
-        for (int y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
-            for (int x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
-                unsigned total[3] = {0, 0, 0};
-                for (int dx = -radius; dx <= radius; dx++) {
-                    int sx = x + dx;
-                    if (sx < 0) sx = 0;
-                    if (sx >= CFW_LYRICS_SAMPLES_X) sx = CFW_LYRICS_SAMPLES_X - 1;
-                    for (unsigned c = 0; c < 3; c++) total[c] += rgb[y * CFW_LYRICS_SAMPLES_X + sx][c];
-                }
-                for (unsigned c = 0; c < 3; c++) temp[x][c] = total[c] / divisor;
-            }
-            for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++)
-                for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = temp[x][c];
-        }
-        for (int x = 0; x < CFW_LYRICS_SAMPLES_X; x++) {
-            for (int y = 0; y < CFW_LYRICS_SAMPLES_Y; y++) {
-                unsigned total[3] = {0, 0, 0};
-                for (int dy = -radius; dy <= radius; dy++) {
-                    int sy = y + dy;
-                    if (sy < 0) sy = 0;
-                    if (sy >= CFW_LYRICS_SAMPLES_Y) sy = CFW_LYRICS_SAMPLES_Y - 1;
-                    for (unsigned c = 0; c < 3; c++) total[c] += rgb[sy * CFW_LYRICS_SAMPLES_X + x][c];
-                }
-                for (unsigned c = 0; c < 3; c++) temp[y][c] = total[c] / divisor;
-            }
-            for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
-                for (unsigned c = 0; c < 3; c++) rgb[y * CFW_LYRICS_SAMPLES_X + x][c] = temp[y][c];
-        }
+    /* Off preserves detail; Subtle is one small pass. Rolling sums bound
+     * each pass to O(pixels), regardless of radius. Cache creation only. */
+    if (level > 3) level = 1;
+    unsigned radius = level < 2 ? 1 : level == 2 ? 3 : 8;
+    for (unsigned pass = 0; pass < level; pass++) {
+        for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
+            blur_line(rgb + y * CFW_LYRICS_SAMPLES_X, CFW_LYRICS_SAMPLES_X, 1, radius, temp);
+        for (unsigned x = 0; x < CFW_LYRICS_SAMPLES_X; x++)
+            blur_line(rgb + x, CFW_LYRICS_SAMPLES_Y, CFW_LYRICS_SAMPLES_X, radius, temp);
     }
     /* Dark enough for muted neighboring lines as well as the highlighted line. */
     const unsigned neutral[3] = {background >> 16, (background >> 8) & 255, background & 255};
@@ -178,7 +174,7 @@ void cfw_lyrics_blur_art(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background
 
 void cfw_lyrics_blur_palette(uint8_t rgb[CFW_LYRICS_SAMPLES][3], unsigned background, int light)
 {
-    cfw_lyrics_blur_art(rgb, background, light, 2);
+    cfw_lyrics_blur_art(rgb, background, light, 3);
 }
 
 void cfw_lyrics_blur(uint8_t rgb[CFW_LYRICS_SAMPLES][3])

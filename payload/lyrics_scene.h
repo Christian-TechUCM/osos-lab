@@ -4,8 +4,8 @@
 #include "lyrics_lrc.h"
 
 #define CFW_LYRICS_ROWS 5
-#define CFW_LYRICS_SAMPLES_X 32
-#define CFW_LYRICS_SAMPLES_Y 24
+#define CFW_LYRICS_SAMPLES_X 160
+#define CFW_LYRICS_SAMPLES_Y 120
 #define CFW_LYRICS_SAMPLES (CFW_LYRICS_SAMPLES_X * CFW_LYRICS_SAMPLES_Y)
 struct cfw_lyrics_row {
     int cue, height, top;

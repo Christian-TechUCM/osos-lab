@@ -27,7 +27,7 @@ static unsigned char view[0x240], parent[0x180], art[0xb8], unrelated[0x240], ba
 static int screen_invalidations, different_window;
 static void invalidate_screen(void) { screen_invalidations++; }
 static void *get_window(void *p) { return p == status && different_window ? unrelated : parent; }
-static int enabled = 1, artwork_enabled = 1, oom, allocs, frees, samples, starts, stops;
+static int enabled = 1, artwork_enabled = 1, oom, fail_allocation, allocs, frees, samples, starts, stops;
 static int stock_draws, stock_events, stock_measures, stock_shown, destroyed, invalidations;
 static int text_draws, blits, fills, loaded, constructors, destructors, bitmap_draws;
 static int32_t last_source[4];
@@ -73,7 +73,7 @@ static void set_interval(void *p, uint32_t n) {
     assert(p == timer_owner && (n == 33 || n == 100 || (CFW_LYRICS_INPUT_DIAGNOSTICS && n == 250)));
     interval = n;
 }
-static void *allocate(uint32_t n) { allocs++; assert(n <= 153628); return oom ? 0 : calloc(1, n); }
+static void *allocate(uint32_t n) { allocs++; assert(n <= 153628); return oom || allocs == fail_allocation ? 0 : calloc(1, n); }
 static void deallocate(void *p) { assert(p); frees++; free(p); }
 static void set_height(void *p, int h) { assert(p == view && h <= 140); ((int32_t *)(view + 0x80))[2] = 100 + h; }
 static void content_rect(void *p, void *out) { assert(p == view || p == backdrop || p == status); int32_t r[] = {0, 0, p == view ? 140 : p == status ? 19 : 221, p == view ? 304 : 320}; memcpy(out, r, sizeof(r)); }
@@ -196,12 +196,12 @@ int main(void)
     assert(cfw_lyrics_view_visible());
     setting_awake = 0; assert(!cfw_lyrics_view_keep_awake()); setting_awake = 1;
     setting_awake = 0; assert(cfw_lyrics_view_visible()); setting_awake = 1;
-    assert(visual.owner == view && visual.background && allocs == 1 && samples == CFW_LYRICS_SAMPLES * 4);
+    assert(visual.owner == view && visual.background && allocs == 2 && frees == 1 && samples == CFW_LYRICS_SAMPLES);
     assert(min_sample_x == 0 && max_sample_x == 99 && min_sample_y == 12 && max_sample_y == 86);
     assert(blits == 1 && fills == 0 && text_draws && starts == 1 && interval == 100);
     int first_loads = loaded, first_measures = measurements, first_constructs = constructors;
     int first_snapshots = snapshots;
-    draw(); assert(allocs == 1 && samples == CFW_LYRICS_SAMPLES * 4 && starts == 1); /* cached, timer not postponed */
+    draw(); assert(allocs == 2 && samples == CFW_LYRICS_SAMPLES && starts == 1); /* cached, timer not postponed */
     assert(snapshots == first_snapshots + 1); /* one audio-position mutex query per draw */
     assert(loaded == first_loads && measurements == first_measures && font_sets == 1);
     assert(constructors == first_constructs); /* no bitmap/context construction per frame */
@@ -218,12 +218,12 @@ int main(void)
     tick(); assert(invalidations == 2 && interval == 100); /* pause mid-transition */
     snap.position = 1000; tick(); assert(invalidations == 3); draw(); /* backward seek */
     snap.delay_ms = 500; tick(); assert(invalidations == 4); draw();
-    snap.generation++; tick(); draw(); assert(allocs == 2 && frees == 1 && samples == CFW_LYRICS_SAMPLES * 8);
+    snap.generation++; tick(); draw(); assert(allocs == 4 && frees == 3 && samples == CFW_LYRICS_SAMPLES * 2);
     int stopped = stops;
     cfw_lyrics_view_visibility(view, 0);
     assert(!cfw_lyrics_view_keep_awake());
     assert(!cfw_lyrics_view_visible());
-    assert(!visual.owner && !visual.background && frees == 2 && stops == stopped + 1);
+    assert(!visual.owner && !visual.background && frees == 4 && stops == stopped + 1);
     int started = starts; tick(); assert(starts == started); /* stale event consumed */
     cfw_lyrics_view_visibility(view, 1); draw(); assert(visual.owner == view);
     assert(cfw_lyrics_view_destroy(view) == view && !visual.owner && !visual.background);
@@ -243,7 +243,7 @@ int main(void)
     RECT(art, 0x98)[3] = 100;
     /* Light mode has its own bright, cached full-screen album background. */
     dark = 0; snap.generation++; attempts = samples; int old_blits = blits;
-    draw(); assert(samples == attempts + CFW_LYRICS_SAMPLES * 4 && blits == old_blits + 1);
+    draw(); assert(samples == attempts + CFW_LYRICS_SAMPLES && blits == old_blits + 1);
     attempts = samples; old_blits = blits;
     draw(); assert(samples == attempts && blits == old_blits + 1);
     old_blits = blits;
@@ -298,13 +298,13 @@ int main(void)
     assert(last_source[0] == 0 && last_source[2] == 19 && last_source[3] == 320);
     dark = 0; attempts = samples;
     cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
-    assert(last_source[0] == 19 && samples == attempts + CFW_LYRICS_SAMPLES * 4);
+    assert(last_source[0] == 19 && samples == attempts + CFW_LYRICS_SAMPLES);
     cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
-    assert(last_source[0] == 0 && last_source[2] == 19 && samples == attempts + CFW_LYRICS_SAMPLES * 4);
-    for (unsigned level = 0; level < 3; level++) {
+    assert(last_source[0] == 0 && last_source[2] == 19 && samples == attempts + CFW_LYRICS_SAMPLES);
+    for (unsigned level = 0; level < 4; level++) {
         setting_blur = level; attempts = samples;
         cfw_lyrics_backdrop_draw(backdrop, (void *)7, (void *)9);
-        assert(samples == attempts + CFW_LYRICS_SAMPLES * 4);
+        assert(samples == attempts + CFW_LYRICS_SAMPLES);
         assert(visual.art_blur == level);
         attempts = samples;
         cfw_lyrics_backdrop_draw(status, (void *)7, (void *)9);
@@ -349,7 +349,17 @@ int main(void)
         if (n == 2) assert(min_sample_y == 35 && max_sample_y == 64);
         free_background();
     }
-    assert(constructors == destructors);
+    /* Final bitmap OOM must release the thumbnail and not retry every frame. */
+    fail_allocation = allocs + 2;
+    snap.generation++; make_background(snap.generation, 320, 240);
+    assert(!visual.background && frees == allocs - 2);
+    attempts = allocs; int old_samples = samples;
+    make_background(snap.generation, 320, 240);
+    assert(allocs == attempts && samples == old_samples);
+    fail_allocation = 0;
+    snap.generation++; make_background(snap.generation, 320, 240);
+    assert(visual.background); free_background();
+    assert(frees == allocs - 2 && constructors == destructors);
     puts("Native lyric view: scoped draw, cache, timer, lifecycle, fallback and OOM passed");
     return 0;
 }

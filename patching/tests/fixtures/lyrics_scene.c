@@ -12,8 +12,45 @@ static int measure(void *context, const char *text, int width)
     return text[0] == 'L' ? 260 : 24;
 }
 static unsigned u16(const unsigned char *p) { return p[0] | p[1] << 8; }
+static void test_blur_reference(void)
+{
+    static uint8_t actual[CFW_LYRICS_SAMPLES][3], expected[CFW_LYRICS_SAMPLES][3];
+    static uint8_t temp[CFW_LYRICS_SAMPLES][3];
+    for (unsigned level = 0; level < 4; level++) {
+        for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
+            for (unsigned c = 0; c < 3; c++) actual[i][c] = expected[i][c] = (i * 73 + c * 39) & 255;
+        int radius = level < 2 ? 1 : level == 2 ? 3 : 8;
+        for (unsigned pass = 0; pass < level; pass++) {
+            for (unsigned axis = 0; axis < 2; axis++) {
+                for (int y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
+                    for (int x = 0; x < CFW_LYRICS_SAMPLES_X; x++)
+                        for (unsigned c = 0; c < 3; c++) {
+                            unsigned sum = 0;
+                            for (int d = -radius; d <= radius; d++) {
+                                int sx = x + (axis ? 0 : d), sy = y + (axis ? d : 0);
+                                if (sx < 0) sx = 0;
+                                if (sy < 0) sy = 0;
+                                if (sx >= CFW_LYRICS_SAMPLES_X) sx = CFW_LYRICS_SAMPLES_X - 1;
+                                if (sy >= CFW_LYRICS_SAMPLES_Y) sy = CFW_LYRICS_SAMPLES_Y - 1;
+                                sum += expected[sy * CFW_LYRICS_SAMPLES_X + sx][c];
+                            }
+                            temp[y * CFW_LYRICS_SAMPLES_X + x][c] = sum / (2 * radius + 1);
+                        }
+                memcpy(expected, temp, sizeof(expected));
+            }
+        }
+        cfw_lyrics_blur_art(actual, 0x123456, level & 1, level);
+        unsigned weight = (level & 1) ? 15 : 30;
+        const unsigned neutral[] = {0x12, 0x34, 0x56};
+        for (unsigned i = 0; i < CFW_LYRICS_SAMPLES; i++)
+            for (unsigned c = 0; c < 3; c++)
+                expected[i][c] = (expected[i][c] * weight + neutral[c] * (100 - weight)) / 100;
+        assert(!memcmp(actual, expected, sizeof(actual)));
+    }
+}
 int main(void)
 {
+    test_blur_reference();
     struct cfw_lrc lrc;
     struct cfw_lyrics_scene scene = {0};
     const char *tag = "[00:01]One\n[00:03]Two\n[00:06]Long\n[00:10]Four\n[00:12]Five\n[00:14]Six";
@@ -81,8 +118,8 @@ int main(void)
             rgb[i][2] = x < CFW_LYRICS_SAMPLES_X / 2 ? 0 : 255;
         }
     cfw_lyrics_blur(rgb);
-    assert(rgb[0][0] > rgb[31][0] && rgb[0][2] < rgb[31][2]);
-    assert(rgb[15][0] != rgb[0][0] && rgb[15][2] != rgb[31][2]); /* mixed blur */
+    assert(rgb[0][0] > rgb[CFW_LYRICS_SAMPLES_X - 1][0] && rgb[0][2] < rgb[CFW_LYRICS_SAMPLES_X - 1][2]);
+    assert(rgb[CFW_LYRICS_SAMPLES_X / 2 - 1][0] != rgb[0][0]); /* mixed blur */
     unsigned char pixels[28 + 640 * 240 + 2];
     memset(pixels, 0xa5, sizeof(pixels));
     assert(!cfw_lyrics_background(pixels + 1, 20, 320, 240, rgb));
@@ -107,16 +144,16 @@ int main(void)
         assert(rgb[n][1] == 254 * 85 / 100 && rgb[n][2] == 255 * 85 / 100);
     }
     unsigned previous_edge = 0;
-    for (unsigned level = 0; level < 3; level++) {
+    for (unsigned level = 0; level < 4; level++) {
         memset(rgb, 0, sizeof(rgb));
         for (unsigned y = 0; y < CFW_LYRICS_SAMPLES_Y; y++)
             for (unsigned x = CFW_LYRICS_SAMPLES_X / 2; x < CFW_LYRICS_SAMPLES_X; x++)
                 rgb[y * CFW_LYRICS_SAMPLES_X + x][0] = 255;
         cfw_lyrics_blur_art(rgb, 0, 0, level);
-        unsigned edge = rgb[CFW_LYRICS_SAMPLES_X / 2 - 3][0];
-        assert(edge > previous_edge); /* higher setting spreads the edge further */
+        unsigned edge = rgb[CFW_LYRICS_SAMPLES_X / 2 - 1][0];
+        assert(level ? edge > previous_edge : edge == 0); /* Off does not blend */
         previous_edge = edge;
-        assert(rgb[0][0] < rgb[31][0]); /* spatial composition survives */
+        assert(rgb[0][0] < rgb[CFW_LYRICS_SAMPLES_X - 1][0]); /* spatial composition survives */
         for (unsigned n = 0; n < CFW_LYRICS_SAMPLES; n++)
             assert(rgb[n][0] <= 76 && !rgb[n][1] && !rgb[n][2]);
     }

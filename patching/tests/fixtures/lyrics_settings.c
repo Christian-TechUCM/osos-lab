@@ -53,7 +53,7 @@ void cfw_ui_status(const struct cfw_ui_action *action, unsigned value) {
 static void defaults(void) {
     assert(cfw_lyrics_font() == 1 && cfw_lyrics_color() == 0);
     assert(cfw_lyrics_album_background() == 0 && cfw_lyrics_keep_awake() == 1);
-    assert(cfw_lyrics_blur_level() == 2);
+    assert(cfw_lyrics_blur_level() == 1);
 }
 int main(void) {
     cfw_lyrics_settings_load(); defaults();
@@ -61,7 +61,7 @@ int main(void) {
     defaults(); assert(!writes && !redraws && !marks);
     assert(!cfw_lyrics_settings_action("CFW_LyricsSettings_Set_00_09", 0));
     assert(!cfw_lyrics_settings_action("CFW_LyricsSettings_Set_05_00", 0));
-    assert(!cfw_lyrics_settings_action("CFW_LyricsSettings_Set_04_03", 0));
+    assert(!cfw_lyrics_settings_action("CFW_LyricsSettings_Set_04_04", 0));
     assert(!cfw_lyrics_settings_action(NULL, 0));
     assert(cfw_lyrics_settings_action("CFW_LyricsSettings_Set_00_02", 0));
     assert(cfw_lyrics_font() == 2 && writes == 1 && redraws == 1 && marks == 2 && !status);
@@ -92,17 +92,29 @@ int main(void) {
     cfw_lyrics_settings_load();
     assert(writes == old_writes && cfw_lyrics_font() == 2 && cfw_lyrics_color() == 3);
     assert(cfw_lyrics_album_background() == 1 && !cfw_lyrics_keep_awake());
-    assert(cfw_lyrics_blur_level() == 2);
-    for (unsigned level = 0; level < 3; level++) {
+    assert(cfw_lyrics_blur_level() == 1);
+    for (unsigned level = 0; level < 4; level++) {
         char action[] = "CFW_LyricsSettings_Set_04_00";
         action[sizeof(action) - 2] += level;
         assert(cfw_lyrics_settings_action(action, 0));
         cfw_lyrics_settings_load();
         assert(disk_size == sizeof(struct record) && cfw_lyrics_blur_level() == level);
         assert(cfw_lyrics_font() == 2 && cfw_lyrics_color() == 3 && cfw_lyrics_album_background() == 1);
+        struct record saved; memcpy(&saved, disk, sizeof(saved)); assert(saved.version == 3);
     }
-    memcpy(&corrupt, disk, sizeof(corrupt)); corrupt.values[4] = 3;
+    for (unsigned level = 0; level < 4; level++) {
+        struct record v2 = {0x3152594c, 2, {2, 3, 1, 0, level}, 0};
+        v2.checksum = checksum(&v2); memcpy(disk, &v2, sizeof(v2));
+        old_writes = writes; cfw_lyrics_settings_load(); assert(writes == old_writes);
+        if (level == 3) { defaults(); continue; }
+        assert(cfw_lyrics_blur_level() == level + 1);
+        assert(cfw_lyrics_font() == 2 && cfw_lyrics_color() == 3 &&
+               cfw_lyrics_album_background() == 1 && !cfw_lyrics_keep_awake());
+    }
+    memcpy(&corrupt, disk, sizeof(corrupt)); corrupt.version = 3; corrupt.values[4] = 4;
     corrupt.checksum = checksum(&corrupt);
+    memcpy(disk, &corrupt, sizeof(corrupt)); cfw_lyrics_settings_load(); defaults();
+    corrupt.version = 4; corrupt.values[4] = 0; corrupt.checksum = checksum(&corrupt);
     memcpy(disk, &corrupt, sizeof(corrupt)); cfw_lyrics_settings_load(); defaults();
     puts("Lyric settings: defaults, selection, persistence, corruption and retry passed");
 }

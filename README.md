@@ -63,11 +63,16 @@ RepriseOS package and builds a companion using that iPod's identity.
 - Experimental [native live lyrics](docs/lyrics-native.md): embedded timed LRC
   lines, ±5-second timing adjustment, scrolling/highlighting, lyric text and
   color choices, album-art or solid backgrounds, and a keep-awake option.
-  **Artwork blur** offers Low / Medium / High (default High). A center-cropped
-  32×24 cover thumbnail is blurred once and cached as a full-screen RGB565
-  background; scrolling frames do not resample or blur the cover. Existing
-  lyric preferences migrate from the four-field v1 record to v2 on the next
-  settings save. Returning to older firmware after saving v2 may reset lyric
+  **Artwork blur** offers Off / Subtle / Medium / Heavy (default Subtle).
+  A higher-detail, center-cropped 160×120 cover thumbnail replaces the old
+  32×24 thumbnail. Off skips blur; Subtle uses just one small-radius pass.
+  Contrast tint remains in all modes for readable text. Rolling-sum blur runs
+  only during cache creation, with 57,600 bytes of temporary heap scratch
+  released afterward; the full-screen RGB565 cache and scrolling path are
+  unchanged. Allocation failure falls back to a solid background without
+  repeated retries. Existing v1 preferences are preserved; v2 Low/Medium/High
+  map to Subtle/Medium/Heavy. Preferences are saved as v3 only on an explicit
+  settings save. Returning to older firmware after saving v3 may reset lyric
   preferences, so keep the settings backup alongside the rollback firmware.
 - Dark-mode search keeps the typed query's original dark ink inside Apple's
   white input box. This draw-scoped exemption does not affect the keyboard

@@ -4,7 +4,7 @@
 #include "preferences.h"
 #include "cfw.h"
 
-static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 0, 1, 2};
+static uint32_t values[CFW_LYRICSSETTINGS_FIELDS] = {1, 0, 0, 1, 1};
 static unsigned save_status;
 static const struct osos_path path = {0, "iPod_Control\\Device\\CFWLyrics"};
 struct record { uint32_t magic, version, values[CFW_LYRICSSETTINGS_FIELDS], checksum; };
@@ -26,14 +26,18 @@ void cfw_lyrics_settings_load(void)
         values[n] = cfw_lyricssettings_fields[n].default_value;
     unsigned fields = CFW_LYRICSSETTINGS_FIELDS;
     if (!cfw_preferences_read(&path, &r, sizeof(r)) || r.magic != 0x3152594c ||
-        r.version != 2 || r.checksum != checksum(&r)) {
+        (r.version != 2 && r.version != 3) || r.checksum != checksum(&r)) {
         /* Preserve all four existing preferences when upgrading. No disk
-         * write at boot; persist v2 only on the next explicit settings save. */
+         * write at boot; persist v3 only on the next explicit settings save. */
         struct record_v1 old;
         if (!cfw_preferences_read(&path, &old, sizeof(old)) || old.magic != 0x3152594c ||
             old.version != 1 || old.checksum != record_checksum(&old, sizeof(old))) return;
         fields = 4;
         for (unsigned n = 0; n < fields; n++) r.values[n] = old.values[n];
+    } else if (r.version == 2) {
+        /* Low/Medium/High become Subtle/Medium/Heavy; Off is a new choice. */
+        if (r.values[CFW_LYRICSSETTINGS_BLUR] >= 3) return;
+        r.values[CFW_LYRICSSETTINGS_BLUR]++;
     }
     for (unsigned n = 0; n < fields; n++)
         if (r.values[n] >= cfw_lyricssettings_fields[n].count) return;
@@ -43,7 +47,7 @@ void cfw_lyrics_settings_load(void)
 static void save(void)
 {
     struct record r = {0};
-    r.magic = 0x3152594c; r.version = 2;
+    r.magic = 0x3152594c; r.version = 3;
     for (unsigned n = 0; n < CFW_LYRICSSETTINGS_FIELDS; n++) r.values[n] = values[n];
     r.checksum = checksum(&r);
     save_status = !cfw_preferences_write(&path, &r, sizeof(r));
